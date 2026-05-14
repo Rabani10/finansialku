@@ -86,22 +86,22 @@ async function callAPI(action, params = {}) {
   return data;
 }
 
+// Semua request pakai GET agar tidak kena blokir CORS Google Apps Script
 async function postAPI(action, body = {}) {
   const url = getGasUrl();
   if (!url) throw new Error("URL Web App belum diatur. Buka Pengaturan.");
 
-  const fullUrl = url + "?action=" + action;
-  const res = await fetch(fullUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    redirect: "follow"
-  });
+  // Encode data sebagai parameter GET — GAS tidak support POST dari browser (CORS)
+  const params = { action, data: JSON.stringify(body) };
+  const qs = new URLSearchParams(params);
+  const fullUrl = url + "?" + qs.toString();
+
+  const res = await fetch(fullUrl, { method: "GET", redirect: "follow" });
 
   if (!res.ok) throw new Error("HTTP error: " + res.status);
-  const data = await res.json();
-  if (data.status === "error") throw new Error(data.message);
-  return data;
+  const result = await res.json();
+  if (result.status === "error") throw new Error(result.message);
+  return result;
 }
 
 // ─── DASHBOARD ───────────────────────────────────────────────
