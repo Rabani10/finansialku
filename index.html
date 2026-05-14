@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#2d9b6a">
+<title>FinansialKu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- LOADING SPLASH -->
+<div id="splash" class="splash">
+  <div class="splash-inner">
+    <div class="splash-logo">
+      <i class="ti ti-leaf"></i>
+    </div>
+    <div class="splash-name">FinansialKu</div>
+    <div class="splash-sub">Keuangan Pribadi</div>
+    <div class="splash-spinner"></div>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app" class="app" style="display:none">
+
+  <!-- PAGES -->
+  <div class="screen">
+
+    <!-- ═══ DASHBOARD ═══ -->
+    <div class="page active" id="page-home">
+      <div class="hero-card">
+        <div class="hero-top">
+          <div>
+            <div class="hero-label">Total Saldo</div>
+            <div class="hero-amount" id="hero-saldo">Rp 0</div>
+            <div class="hero-updated"><span class="dot-live"></span> <span id="last-sync">Memuat...</span></div>
+          </div>
+          <button class="icon-btn glass" onclick="loadDashboard()" aria-label="Refresh">
+            <i class="ti ti-refresh"></i>
+          </button>
+        </div>
+        <div class="hero-pills">
+          <div class="pill green">
+            <i class="ti ti-arrow-up-right"></i>
+            <span id="hero-masuk">Rp 0</span>
+          </div>
+          <div class="pill red">
+            <i class="ti ti-arrow-down-right"></i>
+            <span id="hero-keluar">Rp 0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter periode -->
+      <div class="filter-scroll" id="home-filter">
+        <button class="chip active" data-period="bulan" onclick="setPeriod(this,'bulan')">Bulan Ini</button>
+        <button class="chip" data-period="minggu" onclick="setPeriod(this,'minggu')">Minggu Ini</button>
+        <button class="chip" data-period="hari" onclick="setPeriod(this,'hari')">Hari Ini</button>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="section">
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-label"><i class="ti ti-arrow-up-right" style="color:#2d9b6a"></i> Pemasukan</div>
+            <div class="stat-val income" id="stat-masuk">Rp 0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label"><i class="ti ti-arrow-down-right" style="color:#e05252"></i> Pengeluaran</div>
+            <div class="stat-val expense" id="stat-keluar">Rp 0</div>
+          </div>
+        </div>
+        <div class="cashflow-card" id="cashflow-card">
+          <div>
+            <div class="stat-label">Cashflow Bersih</div>
+            <div class="cashflow-val" id="stat-cashflow">Rp 0</div>
+          </div>
+          <div class="cashflow-badge" id="cashflow-badge">+0%</div>
+        </div>
+      </div>
+
+      <!-- Chart tren -->
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">Tren 6 Bulan</span></div>
+        <div class="card">
+          <div class="chart-legend">
+            <span><span class="dot" style="background:#4caf82"></span>Pemasukan</span>
+            <span><span class="dot" style="background:#e05252"></span>Pengeluaran</span>
+          </div>
+          <div class="bar-chart" id="bar-chart">
+            <div class="chart-empty">Belum ada data</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kategori -->
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">Pengeluaran Terbesar</span></div>
+        <div class="card" id="kat-list">
+          <div class="empty-state-sm">Belum ada data pengeluaran bulan ini</div>
+        </div>
+      </div>
+
+      <!-- Transaksi terbaru -->
+      <div class="section" style="padding-bottom:90px">
+        <div class="section-hdr">
+          <span class="section-title">Terbaru</span>
+          <button class="text-btn" onclick="goTo('transactions')">Lihat semua</button>
+        </div>
+        <div class="tx-list" id="home-tx-list">
+          <div class="empty-state-sm">Belum ada transaksi</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TRANSAKSI ═══ -->
+    <div class="page" id="page-transactions">
+      <div class="page-header">
+        <span class="page-title">Transaksi</span>
+        <div style="display:flex;gap:8px">
+          <button class="icon-btn" onclick="toggleSearch()" aria-label="Cari"><i class="ti ti-search"></i></button>
+          <button class="icon-btn" onclick="toggleFilter()" aria-label="Filter"><i class="ti ti-adjustments-horizontal"></i></button>
+        </div>
+      </div>
+
+      <div class="search-bar" id="search-bar" style="display:none">
+        <i class="ti ti-search"></i>
+        <input type="text" id="search-input" placeholder="Cari transaksi..." oninput="doSearch(this.value)">
+        <button onclick="clearSearch()" aria-label="Hapus pencarian"><i class="ti ti-x"></i></button>
+      </div>
+
+      <div class="filter-scroll">
+        <button class="chip active" onclick="filterJenis(this,'')" data-jenis="">Semua</button>
+        <button class="chip" onclick="filterJenis(this,'Pemasukan')" data-jenis="Pemasukan">Pemasukan</button>
+        <button class="chip" onclick="filterJenis(this,'Pengeluaran')" data-jenis="Pengeluaran">Pengeluaran</button>
+      </div>
+
+      <div class="tx-list padded" id="tx-list" style="padding-bottom:90px">
+        <div class="loading-state"><div class="spinner"></div><span>Memuat transaksi...</span></div>
+      </div>
+    </div>
+
+    <!-- ═══ FORM TAMBAH ═══ -->
+    <div class="page" id="page-add">
+      <div class="form-topbar">
+        <button class="icon-btn" onclick="goTo('home')" aria-label="Tutup"><i class="ti ti-x"></i></button>
+        <span class="page-title">Tambah Transaksi</span>
+        <div style="width:36px"></div>
+      </div>
+
+      <div class="type-toggle">
+        <button class="type-btn active income" id="btn-income" onclick="setJenis('Pemasukan')">
+          <i class="ti ti-arrow-up-right"></i> Pemasukan
+        </button>
+        <button class="type-btn expense" id="btn-expense" onclick="setJenis('Pengeluaran')">
+          <i class="ti ti-arrow-down-right"></i> Pengeluaran
+        </button>
+      </div>
+
+      <div class="form-body">
+        <div class="amount-wrap">
+          <span class="currency-prefix">Rp</span>
+          <input type="number" id="f-nominal" class="amount-input" placeholder="0" min="1" inputmode="numeric">
+        </div>
+
+        <div class="field">
+          <label class="field-label">Tanggal</label>
+          <input type="date" id="f-tanggal" class="field-input">
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label">Kategori</label>
+            <select id="f-kategori" class="field-select" onchange="updateSubkat()">
+              <option value="">-- Pilih --</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Subkategori</label>
+            <select id="f-subkategori" class="field-select">
+              <option value="">-- Pilih --</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Metode Pembayaran</label>
+          <select id="f-metode" class="field-select">
+            <option value="">-- Pilih --</option>
+            <option>Cash</option>
+            <option>Transfer BCA</option>
+            <option>Transfer BRI</option>
+            <option>Transfer Mandiri</option>
+            <option>Transfer BNI</option>
+            <option>GoPay</option>
+            <option>OVO</option>
+            <option>Dana</option>
+            <option>ShopeePay</option>
+            <option>LinkAja</option>
+            <option>Kartu Debit</option>
+            <option>Kartu Kredit</option>
+            <option>Autodebet</option>
+            <option>QRIS</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Sumber / Tujuan Dana</label>
+          <input type="text" id="f-sumber" class="field-input" placeholder="cth: Rekening BCA, Dompet">
+        </div>
+
+        <div class="field">
+          <label class="field-label">Catatan <span style="font-weight:400;color:#8aA896">(opsional)</span></label>
+          <textarea id="f-catatan" class="field-input" rows="2" placeholder="Tambahkan catatan..."></textarea>
+        </div>
+
+        <button class="save-btn" onclick="simpanTransaksi()" id="save-btn">
+          <i class="ti ti-device-floppy"></i>
+          Simpan ke Spreadsheet
+        </button>
+        <div style="height:20px"></div>
+      </div>
+    </div>
+
+    <!-- ═══ LAPORAN ═══ -->
+    <div class="page" id="page-reports">
+      <div class="page-header">
+        <span class="page-title">Laporan</span>
+      </div>
+
+      <div class="filter-scroll" id="report-filter">
+        <button class="chip active" onclick="setReportPeriod(this)" data-month="">Bulan Ini</button>
+      </div>
+
+      <div class="section">
+        <div class="stat-grid">
+          <div class="stat-card"><div class="stat-label">Pemasukan</div><div class="stat-val income" id="rep-masuk">Rp 0</div></div>
+          <div class="stat-card"><div class="stat-label">Pengeluaran</div><div class="stat-val expense" id="rep-keluar">Rp 0</div></div>
+        </div>
+        <div class="cashflow-card">
+          <div>
+            <div class="stat-label">Cashflow Bersih</div>
+            <div class="cashflow-val" id="rep-cashflow">Rp 0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">Detail per Kategori</span></div>
+        <div class="card" id="rep-kat-list">
+          <div class="empty-state-sm">Belum ada data</div>
+        </div>
+      </div>
+
+      <div class="section" style="padding-bottom:90px">
+        <div class="section-hdr"><span class="section-title">Export Data</span></div>
+        <div class="export-grid">
+          <button class="export-btn" onclick="exportCSV()">
+            <i class="ti ti-file-spreadsheet" style="color:#2d9b6a"></i>
+            <span>Export CSV</span>
+            <span class="export-sub">Buka di Excel</span>
+          </button>
+          <a class="export-btn" id="sheets-link" href="#" target="_blank">
+            <i class="ti ti-table" style="color:#1a73e8"></i>
+            <span>Buka Spreadsheet</span>
+            <span class="export-sub">Google Sheets</span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ PENGATURAN ═══ -->
+    <div class="page" id="page-settings">
+      <div class="page-header"><span class="page-title">Pengaturan</span></div>
+
+      <div style="padding:0 16px 16px">
+        <div class="profile-card">
+          <div class="profile-avatar"><i class="ti ti-user"></i></div>
+          <div>
+            <div class="profile-name" id="p-name">FinansialKu</div>
+            <div class="profile-sub" id="p-email">Belum terhubung</div>
+          </div>
+          <div class="sync-pill" id="sync-pill"><span class="dot-live"></span>Offline</div>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-label">Google Spreadsheet</div>
+        <div class="settings-item" onclick="showUrlSetup()">
+          <div class="s-icon"><i class="ti ti-link"></i></div>
+          <div class="s-text">
+            <div class="s-name">URL Web App</div>
+            <div class="s-desc" id="s-url-desc">Belum dikonfigurasi</div>
+          </div>
+          <i class="ti ti-chevron-right s-arrow"></i>
+        </div>
+        <div class="settings-item" onclick="loadDashboard()">
+          <div class="s-icon"><i class="ti ti-refresh"></i></div>
+          <div class="s-text">
+            <div class="s-name">Sinkron Sekarang</div>
+            <div class="s-desc" id="s-last-sync">Belum pernah sinkron</div>
+          </div>
+          <i class="ti ti-chevron-right s-arrow"></i>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-label">Preferensi</div>
+        <div class="settings-item" onclick="showNameSetup()">
+          <div class="s-icon"><i class="ti ti-user"></i></div>
+          <div class="s-text"><div class="s-name">Nama Pengguna</div><div class="s-desc" id="s-name-desc">-</div></div>
+          <i class="ti ti-chevron-right s-arrow"></i>
+        </div>
+        <div class="settings-item" onclick="clearData()">
+          <div class="s-icon" style="background:#fff0f0"><i class="ti ti-trash" style="color:#e05252"></i></div>
+          <div class="s-text"><div class="s-name" style="color:#e05252">Reset Semua Data Lokal</div><div class="s-desc">Data di Sheets tidak terpengaruh</div></div>
+        </div>
+      </div>
+
+      <div style="padding:24px 16px 90px;text-align:center">
+        <div style="font-size:12px;color:#8aA896">FinansialKu v1.0.0</div>
+        <div style="font-size:11px;color:#b0c4b8;margin-top:4px">Terhubung dengan Google Sheets API</div>
+      </div>
+    </div>
+
+  </div><!-- /screen -->
+
+  <!-- FAB -->
+  <button class="fab" id="fab" onclick="goTo('add')" aria-label="Tambah transaksi">
+    <i class="ti ti-plus"></i>
+  </button>
+
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <button class="nav-item active" id="nav-home" onclick="goTo('home')" aria-label="Beranda">
+      <i class="ti ti-home"></i><span>Beranda</span>
+    </button>
+    <button class="nav-item" id="nav-transactions" onclick="goTo('transactions')" aria-label="Transaksi">
+      <i class="ti ti-list"></i><span>Transaksi</span>
+    </button>
+    <div style="width:60px;flex-shrink:0"></div><!-- space for FAB -->
+    <button class="nav-item" id="nav-reports" onclick="goTo('reports')" aria-label="Laporan">
+      <i class="ti ti-chart-pie"></i><span>Laporan</span>
+    </button>
+    <button class="nav-item" id="nav-settings" onclick="goTo('settings')" aria-label="Pengaturan">
+      <i class="ti ti-settings"></i><span>Pengaturan</span>
+    </button>
+  </nav>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast" role="alert"></div>
+
+  <!-- MODAL SETUP URL -->
+  <div class="modal-overlay" id="modal-url" style="display:none" onclick="closeModal('modal-url')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <h3 class="modal-title">URL Google Apps Script</h3>
+      <p class="modal-desc">Tempel URL Web App yang didapat setelah deploy di Google Apps Script.</p>
+      <input type="url" id="modal-url-input" class="field-input" placeholder="https://script.google.com/macros/s/...">
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="closeModal('modal-url')">Batal</button>
+        <button class="modal-save" onclick="saveUrl()">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL SETUP NAMA -->
+  <div class="modal-overlay" id="modal-name" style="display:none" onclick="closeModal('modal-name')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <h3 class="modal-title">Nama Pengguna</h3>
+      <input type="text" id="modal-name-input" class="field-input" placeholder="cth: Bani">
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="closeModal('modal-name')">Batal</button>
+        <button class="modal-save" onclick="saveName()">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DETAIL TRANSAKSI -->
+  <div class="modal-overlay" id="modal-tx" style="display:none" onclick="closeModal('modal-tx')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div id="modal-tx-content"></div>
+      <div class="modal-btns">
+        <button class="modal-cancel danger" id="modal-tx-del" onclick="">Hapus</button>
+        <button class="modal-save" onclick="closeModal('modal-tx')">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
