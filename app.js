@@ -142,16 +142,11 @@ async function loadDashboard() {
 }
 
 function updateStatCards(data) {
-  const p = STATE.periodeDashboard;
-  let masuk, keluar;
-
-  if (p === "bulan") { masuk = data.pemasukan_bulan; keluar = data.pengeluaran_bulan; }
-  else               { masuk = data.total_pemasukan;  keluar = data.total_pengeluaran; }
-
-  set("stat-masuk", fmtRp(masuk));
-  set("stat-keluar", fmtRp(keluar));
-
-  const cf = masuk - keluar;
+  // Dipanggil hanya saat pertama load dashboard (period = bulan)
+  // Untuk ganti period, setPeriod() akan panggil loadDashboardPeriod() langsung
+  set("stat-masuk", fmtRp(data.pemasukan_bulan));
+  set("stat-keluar", fmtRp(data.pengeluaran_bulan));
+  const cf = (data.pemasukan_bulan || 0) - (data.pengeluaran_bulan || 0);
   const cfEl = document.getElementById("stat-cashflow");
   if (cfEl) {
     cfEl.textContent = (cf >= 0 ? "+" : "") + fmtRp(cf);
@@ -598,7 +593,74 @@ function setPeriod(el, period) {
   STATE.periodeDashboard = period;
   document.querySelectorAll("#home-filter .chip").forEach(c => c.classList.remove("active"));
   el.classList.add("active");
-  if (STATE.dashboardData) updateStatCards(STATE.dashboardData);
+  loadDashboardPeriod(period);
+}
+
+async function loadDashboardPeriod(period) {
+  // Hitung rentang tanggal berdasarkan periode
+  const now = new Date();
+  let dari, sampai;
+
+  if (period === "hari") {
+    dari = sampai = toYMD(now);
+
+  } else if (period === "minggu") {
+    // Senin s/d Minggu minggu ini
+    const day = now.getDay(); // 0=Sun, 1=Mon...
+    const diffMon = (day === 0) ? -6 : 1 - day;
+    const mon = new Date(now); mon.setDate(now.getDate() + diffMon);
+    dari = toYMD(mon);
+    sampai = toYMD(now);
+
+  } else {
+    // bulan — default
+    dari = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-01";
+    sampai = toYMD(now);
+  }
+
+  try {
+    const res = await callAPI("getTransaksi", { tanggal_dari: dari, tanggal_sampai: sampai });
+    const list = res.data || [];
+
+    let masuk = 0, keluar = 0;
+    const perKat = {};
+    list.forEach(tx => {
+      const n = parseFloat(tx.nominal) || 0;
+      if (tx.jenis === "Pemasukan") masuk += n;
+      else {
+        keluar += n;
+        perKat[tx.kategori] = (perKat[tx.kategori] || 0) + n;
+      }
+    });
+
+    // Update stat cards
+    set("stat-masuk", fmtRp(masuk));
+    set("stat-keluar", fmtRp(keluar));
+    const cf = masuk - keluar;
+    const cfEl = document.getElementById("stat-cashflow");
+    if (cfEl) {
+      cfEl.textContent = (cf >= 0 ? "+" : "") + fmtRp(cf);
+      cfEl.style.color = cf >= 0 ? "#2d9b6a" : "#e05252";
+    }
+
+    // Update kategori pengeluaran
+    const katArr = Object.entries(perKat)
+      .map(([nama, total]) => ({ nama, total }))
+      .sort((a, b) => b.total - a.total);
+    renderKatList(katArr, "kat-list");
+
+    // Update transaksi terbaru
+    renderTxList(list.slice(0, 5), "home-tx-list", true);
+
+  } catch (e) {
+    showToast("Gagal filter: " + e.message, "error");
+  }
+}
+
+function toYMD(d) {
+  return d.getFullYear() + "-" +
+    String(d.getMonth() + 1).padStart(2, "0") + "-" +
+    String(d.getDate()).padStart(2, "0");
 }
 
 // ─── TOAST ───────────────────────────────────────────────────
