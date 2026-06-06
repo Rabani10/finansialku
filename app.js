@@ -247,18 +247,25 @@ function renderTxList(list, targetId, mini = false) {
 }
 
 function txCard(tx) {
-  const isIncome = tx.jenis === "Pemasukan";
-  const ikon = IKON_KATEGORI[tx.kategori] || "ti-receipt";
-  return `<div class="tx-card ${isIncome ? "income" : "expense"}" onclick="showTxDetail('${tx.id}')">
-    <div class="tx-icon-wrap ${isIncome ? "" : "exp"}">
+  const isTransfer = tx.jenis === "Transfer";
+  const isIncome   = tx.jenis === "Pemasukan";
+  const ikon = isTransfer ? "ti-transfer" : (IKON_KATEGORI[tx.kategori] || "ti-receipt");
+
+  const iconWrapClass = isTransfer ? "transfer" : (isIncome ? "" : "exp");
+  const amountClass   = isTransfer ? "transfer" : (isIncome ? "income" : "expense");
+  const amountPrefix  = isTransfer ? "⇄ " : (isIncome ? "+" : "-");
+  const subText       = tx.catatan || tx.metode || tx.sumber_tujuan || "—";
+
+  return `<div class="tx-card ${amountClass}" onclick="showTxDetail('${tx.id}')">
+    <div class="tx-icon-wrap ${iconWrapClass}">
       <i class="ti ${ikon}"></i>
     </div>
     <div class="tx-meta">
-      <div class="tx-name">${tx.kategori}${tx.subkategori ? " · " + tx.subkategori : ""}</div>
-      <div class="tx-sub">${tx.catatan || tx.metode || tx.sumber_tujuan || "—"}</div>
+      <div class="tx-name">${tx.kategori}${tx.subkategori ? " · " + tx.subkategori : ""}${isTransfer ? " <span class=\"badge-transfer\">Transfer</span>" : ""}</div>
+      <div class="tx-sub">${subText}</div>
     </div>
-    <div class="tx-amount ${isIncome ? "income" : "expense"}">
-      ${isIncome ? "+" : "-"}${fmtRp(tx.nominal)}
+    <div class="tx-amount ${amountClass}">
+      ${amountPrefix}${fmtRp(tx.nominal)}
     </div>
   </div>`;
 }
@@ -478,12 +485,20 @@ async function loadReports(bulan) {
     const perKatMasuk = {}; // { kategori: total } untuk pemasukan
 
     list.forEach(tx => {
-      const n  = parseFloat(tx.nominal) || 0;
+      const n   = parseFloat(tx.nominal) || 0;
       const kat = tx.kategori || "Lainnya";
       const sub = tx.subkategori ? (kat + " › " + tx.subkategori) : null;
       const rek = tx.metode || "Tidak diketahui";
 
-      if (!perRek[rek]) perRek[rek] = { masuk: 0, keluar: 0, count: 0 };
+      // Transfer — hanya catat di rekening, tidak di cashflow laporan
+      if (tx.jenis === "Transfer") {
+        if (!perRek[rek]) perRek[rek] = { masuk: 0, keluar: 0, count: 0, transfer: 0 };
+        perRek[rek].transfer = (perRek[rek].transfer || 0) + n;
+        perRek[rek].count++;
+        return;
+      }
+
+      if (!perRek[rek]) perRek[rek] = { masuk: 0, keluar: 0, count: 0, transfer: 0 };
       perRek[rek].count++;
 
       if (tx.jenis === "Pemasukan") {
@@ -650,6 +665,7 @@ function renderRekeningReport(perRek) {
       <div style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:120px">
         ${d.masuk > 0 ? `<div style="font-size:11px;color:#2d9b6a">↑ Masuk: ${fmtRp(d.masuk)}</div>` : ""}
         ${d.keluar > 0 ? `<div style="font-size:11px;color:#e05252">↓ Keluar: ${fmtRp(d.keluar)}</div>` : ""}
+        ${d.transfer > 0 ? `<div style="font-size:11px;color:#d97706">⇄ Transfer: ${fmtRp(d.transfer)}</div>` : ""}
       </div>
       <span style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace;color:${net>=0?"#2d9b6a":"#e05252"}">${net>=0?"+":""}${fmtRp(net)}</span>
     </div>`;
@@ -934,6 +950,134 @@ async function simpanAdjust() {
   }
 }
 
+
+// ─── TRANSFER ANTAR REKENING ──────────────────────────────────
+function showModalTransfer() {
+  if (!_rekeningData || !_rekeningData.length) {
+    showToast("Muat data rekening dulu", "warn");
+    loadRekening();
+    return;
+  }
+
+  const aktif = _rekeningData.filter(r => r.aktif);
+  if (aktif.length < 2) {
+    showToast("Butuh minimal 2 rekening aktif untuk transfer", "warn");
+    return;
+  }
+
+  // Populate dropdowns dari data rekening yang sudah dimuat
+  const opts = aktif.map(r => {
+    const saldo = r.saldo_realtime !== undefined ? r.saldo_realtime : r.saldo_awal;
+    return `<option value="${r.nama}" data-saldo="${saldo}">${r.nama} (${fmtRp(saldo)})</option>`;
+  }).join("");
+
+  document.getElementById("tf-dari").innerHTML = '<option value="">-- Pilih Rekening Asal --</option>' + opts;
+  document.getElementById("tf-ke").innerHTML   = '<option value="">-- Pilih Rekening Tujuan --</option>' + opts;
+  document.getElementById("tf-nominal").value  = "";
+  document.getElementById("tf-catatan").value  = "";
+  document.getElementById("tf-tanggal").value  = new Date().toISOString().split("T")[0];
+
+  // Reset preview
+  document.getElementById("tp-from").textContent   = "Pilih rekening asal";
+  document.getElementById("tp-to").textContent     = "Pilih rekening tujuan";
+  document.getElementById("tp-amount").textContent = "Rp 0";
+
+  document.getElementById("modal-transfer").style.display = "flex";
+}
+
+function updateTransferPreview() {
+  const dari    = document.getElementById("tf-dari").value;
+  const ke      = document.getElementById("tf-ke").value;
+  const nominal = parseFloat(document.getElementById("tf-nominal").value) || 0;
+
+  const fromEl   = document.getElementById("tp-from");
+  const toEl     = document.getElementById("tp-to");
+  const amountEl = document.getElementById("tp-amount");
+
+  fromEl.textContent   = dari || "Pilih rekening asal";
+  toEl.textContent     = ke   || "Pilih rekening tujuan";
+  amountEl.textContent = nominal > 0 ? fmtRp(nominal) : "Rp 0";
+
+  // Validasi — rekening sama
+  const saveBtn = document.getElementById("tf-save-btn");
+  if (dari && ke && dari === ke) {
+    fromEl.style.color = "#e05252";
+    toEl.style.color   = "#e05252";
+    if (saveBtn) saveBtn.disabled = true;
+  } else {
+    fromEl.style.color = "";
+    toEl.style.color   = "";
+    if (saveBtn) saveBtn.disabled = false;
+  }
+
+  // Warning saldo tidak cukup
+  if (dari && nominal > 0) {
+    const rek = _rekeningData.find(r => r.nama === dari);
+    if (rek) {
+      const saldo = rek.saldo_realtime !== undefined ? rek.saldo_realtime : rek.saldo_awal;
+      fromEl.textContent = dari + " (" + fmtRp(saldo) + ")";
+      if (nominal > saldo) {
+        fromEl.style.color = "#e05252";
+        if (saveBtn) saveBtn.disabled = true;
+      } else {
+        fromEl.style.color = "#2d9b6a";
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    }
+  }
+}
+
+async function simpanTransfer() {
+  const dari    = document.getElementById("tf-dari").value;
+  const ke      = document.getElementById("tf-ke").value;
+  const nominal = document.getElementById("tf-nominal").value;
+  const tanggal = document.getElementById("tf-tanggal").value;
+  const catatan = document.getElementById("tf-catatan").value;
+
+  // Validasi
+  if (!dari)    { showToast("Pilih rekening asal", "error"); return; }
+  if (!ke)      { showToast("Pilih rekening tujuan", "error"); return; }
+  if (dari === ke) { showToast("Rekening asal dan tujuan tidak boleh sama", "error"); return; }
+  if (!nominal || parseFloat(nominal) <= 0) { showToast("Masukkan jumlah transfer", "error"); return; }
+
+  // Cek saldo cukup
+  const rekAsal = _rekeningData.find(r => r.nama === dari);
+  if (rekAsal) {
+    const saldo = rekAsal.saldo_realtime !== undefined ? rekAsal.saldo_realtime : rekAsal.saldo_awal;
+    if (parseFloat(nominal) > saldo) {
+      showToast("Saldo " + dari + " tidak cukup (" + fmtRp(saldo) + ")", "error");
+      return;
+    }
+  }
+
+  const btn = document.getElementById("tf-save-btn");
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner-sm"></div> Memproses...';
+
+  try {
+    const res = await postAPI("addTransfer", {
+      dari_rekening : dari,
+      ke_rekening   : ke,
+      nominal       : parseFloat(nominal),
+      tanggal       : tanggal,
+      catatan       : catatan
+    });
+
+    showToast("✅ Transfer " + fmtRp(parseFloat(nominal)) + " berhasil!", "success", 3500);
+    closeModal("modal-transfer");
+
+    // Refresh data
+    await loadRekening();
+    loadDashboard();
+
+  } catch (e) {
+    showToast("Gagal transfer: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-transfer" style="font-size:15px"></i> Transfer';
+  }
+}
+
 // ─── BUDGET ──────────────────────────────────────────────────
 let budgetBulanAktif = "";
 
@@ -1190,6 +1334,7 @@ async function loadDashboardPeriod(period) {
     let masuk = 0, keluar = 0;
     const perKat = {};
     list.forEach(tx => {
+      if (tx.jenis === "Transfer") return; // Transfer tidak masuk cashflow
       const n = parseFloat(tx.nominal) || 0;
       if (tx.jenis === "Pemasukan") masuk += n;
       else {
