@@ -192,24 +192,11 @@
         </div>
 
         <div class="field">
-          <label class="field-label">Metode Pembayaran</label>
+          <label class="field-label">Rekening / Dompet</label>
           <select id="f-metode" class="field-select">
-            <option value="">-- Pilih --</option>
-            <option>Cash</option>
-            <option>Transfer BCA</option>
-            <option>Transfer BRI</option>
-            <option>Transfer Mandiri</option>
-            <option>Transfer BNI</option>
-            <option>GoPay</option>
-            <option>OVO</option>
-            <option>Dana</option>
-            <option>ShopeePay</option>
-            <option>LinkAja</option>
-            <option>Kartu Debit</option>
-            <option>Kartu Kredit</option>
-            <option>Autodebet</option>
-            <option>QRIS</option>
+            <option value="">-- Pilih Rekening --</option>
           </select>
+          <div style="font-size:11px;color:#8aA896;margin-top:4px">Belum ada? <button class="text-btn" style="font-size:11px" onclick="goTo('rekening')">Kelola Rekening</button></div>
         </div>
 
         <div class="field">
@@ -273,6 +260,100 @@
             <span>Buka Spreadsheet</span>
             <span class="export-sub">Google Sheets</span>
           </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ REKENING ═══ -->
+    <div class="page" id="page-rekening">
+      <div class="page-header">
+        <span class="page-title">Rekening</span>
+        <button class="icon-btn" onclick="showModalRekening()" aria-label="Tambah rekening">
+          <i class="ti ti-plus"></i>
+        </button>
+      </div>
+
+      <!-- Total konsolidasi -->
+      <div class="rek-hero">
+        <div class="rek-hero-label">Total Saldo Semua Rekening</div>
+        <div class="rek-hero-amount" id="rek-total">Rp 0</div>
+        <div class="rek-hero-sub" id="rek-aktif-count">Memuat...</div>
+      </div>
+
+      <!-- Filter tipe -->
+      <div class="filter-scroll" id="rek-filter">
+        <button class="chip active" onclick="filterRekening(this,'')" data-tipe="">Semua</button>
+        <button class="chip" onclick="filterRekening(this,'Bank')" data-tipe="Bank">Bank</button>
+        <button class="chip" onclick="filterRekening(this,'E-Wallet')" data-tipe="E-Wallet">E-Wallet</button>
+        <button class="chip" onclick="filterRekening(this,'Cash')" data-tipe="Cash">Cash</button>
+        <button class="chip" onclick="filterRekening(this,'Investasi')" data-tipe="Investasi">Investasi</button>
+      </div>
+
+      <!-- Daftar rekening -->
+      <div class="section">
+        <div id="rek-list">
+          <div class="loading-state"><div class="spinner"></div><span>Memuat rekening...</span></div>
+        </div>
+      </div>
+
+      <!-- Transaksi rekening terpilih -->
+      <div class="section" id="rek-tx-section" style="display:none;padding-bottom:90px">
+        <div class="section-hdr">
+          <span class="section-title" id="rek-tx-title">Transaksi</span>
+          <button class="text-btn" onclick="closeRekeningTx()">Tutup</button>
+        </div>
+        <div class="tx-list" id="rek-tx-list"></div>
+      </div>
+
+      <div style="height:90px"></div>
+    </div>
+
+    <!-- ═══ BUDGET ═══ -->
+    <div class="page" id="page-budget">
+      <div class="page-header">
+        <span class="page-title">Budget</span>
+        <button class="icon-btn" onclick="showModalBudget()" aria-label="Tambah budget">
+          <i class="ti ti-plus"></i>
+        </button>
+      </div>
+
+      <!-- Bulan selector -->
+      <div class="filter-scroll" id="budget-filter"></div>
+
+      <!-- Ringkasan total budget -->
+      <div class="section">
+        <div class="budget-summary-card" id="budget-summary">
+          <div class="bsum-row">
+            <div class="bsum-item">
+              <div class="bsum-label">Total Budget</div>
+              <div class="bsum-val" id="bsum-limit">Rp 0</div>
+            </div>
+            <div class="bsum-item">
+              <div class="bsum-label">Terpakai</div>
+              <div class="bsum-val expense" id="bsum-used">Rp 0</div>
+            </div>
+            <div class="bsum-item">
+              <div class="bsum-label">Sisa</div>
+              <div class="bsum-val income" id="bsum-sisa">Rp 0</div>
+            </div>
+          </div>
+          <div class="bsum-track-wrap">
+            <div class="bsum-track">
+              <div class="bsum-fill" id="bsum-fill" style="width:0%"></div>
+            </div>
+            <span class="bsum-pct" id="bsum-pct">0%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- List budget per kategori -->
+      <div class="section" style="padding-bottom:90px">
+        <div class="section-hdr">
+          <span class="section-title">Per Kategori</span>
+          <button class="text-btn" onclick="showModalBudget()">+ Tambah</button>
+        </div>
+        <div id="budget-list">
+          <div class="loading-state"><div class="spinner"></div><span>Memuat budget...</span></div>
         </div>
       </div>
     </div>
@@ -343,12 +424,12 @@
     <button class="nav-item active" id="nav-home" onclick="goTo('home')" aria-label="Beranda">
       <i class="ti ti-home"></i><span>Beranda</span>
     </button>
-    <button class="nav-item" id="nav-transactions" onclick="goTo('transactions')" aria-label="Transaksi">
-      <i class="ti ti-list"></i><span>Transaksi</span>
+    <button class="nav-item" id="nav-rekening" onclick="goTo('rekening')" aria-label="Rekening">
+      <i class="ti ti-wallet"></i><span>Rekening</span>
     </button>
     <div style="width:60px;flex-shrink:0"></div><!-- space for FAB -->
-    <button class="nav-item" id="nav-reports" onclick="goTo('reports')" aria-label="Laporan">
-      <i class="ti ti-chart-pie"></i><span>Laporan</span>
+    <button class="nav-item" id="nav-budget" onclick="goTo('budget')" aria-label="Budget">
+      <i class="ti ti-target"></i><span>Budget</span>
     </button>
     <button class="nav-item" id="nav-settings" onclick="goTo('settings')" aria-label="Pengaturan">
       <i class="ti ti-settings"></i><span>Pengaturan</span>
@@ -390,6 +471,123 @@
       <div class="modal-btns">
         <button class="modal-cancel danger" id="modal-tx-del" onclick="">Hapus</button>
         <button class="modal-save" onclick="closeModal('modal-tx')">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL SET BUDGET -->
+  <div class="modal-overlay" id="modal-budget" style="display:none" onclick="closeModal('modal-budget')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <h3 class="modal-title" id="modal-budget-title">Set Budget Kategori</h3>
+      <input type="hidden" id="mb-id">
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Bulan</label>
+        <input type="month" id="mb-bulan" class="field-input">
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Kategori</label>
+        <select id="mb-kategori" class="field-select">
+          <option value="">-- Pilih Kategori --</option>
+          <option>Makanan & Minuman</option>
+          <option>Belanja</option>
+          <option>Transportasi</option>
+          <option>Tagihan & Utilitas</option>
+          <option>Pulsa & Paket Data</option>
+          <option>Kesehatan</option>
+          <option>Hiburan</option>
+          <option>Gaya Hidup</option>
+          <option>Pendidikan</option>
+          <option>Donasi / Zakat</option>
+          <option>Transfer Keluar</option>
+          <option>Biaya Admin / Fee</option>
+          <option>Lainnya</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Limit Budget (Rp)</label>
+        <input type="number" id="mb-limit" class="field-input" placeholder="cth: 1500000" min="1" inputmode="numeric">
+      </div>
+      <div class="field" style="margin-bottom:4px">
+        <label class="field-label">Catatan <span style="font-weight:400;color:#8aA896">(opsional)</span></label>
+        <input type="text" id="mb-catatan" class="field-input" placeholder="cth: Termasuk kopi dan snack">
+      </div>
+      <div class="modal-btns">
+        <button class="modal-cancel" id="mb-del-btn" onclick="deleteBudgetItem()" style="display:none;color:#e05252">Hapus</button>
+        <button class="modal-cancel" onclick="closeModal('modal-budget')">Batal</button>
+        <button class="modal-save" onclick="saveBudget()">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL REKENING -->
+  <div class="modal-overlay" id="modal-rekening" style="display:none" onclick="closeModal('modal-rekening')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <h3 class="modal-title" id="mr-title">Tambah Rekening</h3>
+      <input type="hidden" id="mr-id">
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Nama Rekening</label>
+        <input type="text" id="mr-nama" class="field-input" placeholder="cth: BCA, GoPay, Cash">
+      </div>
+      <div class="field-row" style="margin-bottom:12px">
+        <div class="field">
+          <label class="field-label">Tipe</label>
+          <select id="mr-tipe" class="field-select">
+            <option value="Bank">Bank</option>
+            <option value="E-Wallet">E-Wallet</option>
+            <option value="Cash">Cash</option>
+            <option value="Investasi">Investasi</option>
+            <option value="Lainnya">Lainnya</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">Warna</label>
+          <div class="color-picker" id="mr-color-wrap">
+            <div class="color-opt active" data-color="#4caf82" style="background:#4caf82" onclick="pickColor(this)"></div>
+            <div class="color-opt" data-color="#1a73e8" style="background:#1a73e8" onclick="pickColor(this)"></div>
+            <div class="color-opt" data-color="#00aed6" style="background:#00aed6" onclick="pickColor(this)"></div>
+            <div class="color-opt" data-color="#4c3494" style="background:#4c3494" onclick="pickColor(this)"></div>
+            <div class="color-opt" data-color="#e05252" style="background:#e05252" onclick="pickColor(this)"></div>
+            <div class="color-opt" data-color="#d97706" style="background:#d97706" onclick="pickColor(this)"></div>
+            <div class="color-opt" data-color="#555555" style="background:#555555" onclick="pickColor(this)"></div>
+            <div class="color-opt" data-color="#118eda" style="background:#118eda" onclick="pickColor(this)"></div>
+          </div>
+          <input type="hidden" id="mr-warna" value="#4caf82">
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Saldo Awal (Rp)</label>
+        <input type="number" id="mr-saldo" class="field-input" placeholder="0" min="0" inputmode="numeric">
+      </div>
+      <div class="field" style="margin-bottom:4px">
+        <label class="field-label">Catatan <span style="font-weight:400;color:#8aA896">(opsional)</span></label>
+        <input type="text" id="mr-catatan" class="field-input" placeholder="cth: Rekening gajian">
+      </div>
+      <div class="modal-btns">
+        <button class="modal-cancel danger" id="mr-del-btn" onclick="deleteRekeningItem()" style="display:none">Nonaktifkan</button>
+        <button class="modal-cancel" onclick="closeModal('modal-rekening')">Batal</button>
+        <button class="modal-save" onclick="saveRekening()">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL ADJUST SALDO -->
+  <div class="modal-overlay" id="modal-adjust" style="display:none" onclick="closeModal('modal-adjust')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <h3 class="modal-title">Sesuaikan Saldo</h3>
+      <p style="font-size:13px;color:#8aA896;margin-bottom:12px">Tambah atau kurangi saldo <b id="adj-rek-name"></b> secara manual</p>
+      <input type="hidden" id="adj-rek-nama">
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Jumlah Penyesuaian (Rp)</label>
+        <input type="number" id="adj-nominal" class="field-input" placeholder="cth: 50000 atau -50000" inputmode="numeric">
+        <div style="font-size:11px;color:#8aA896;margin-top:4px">Angka positif = tambah saldo, negatif = kurangi</div>
+      </div>
+      <div class="field" style="margin-bottom:4px">
+        <label class="field-label">Keterangan</label>
+        <input type="text" id="adj-catatan" class="field-input" placeholder="cth: Koreksi saldo">
+      </div>
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="closeModal('modal-adjust')">Batal</button>
+        <button class="modal-save" onclick="simpanAdjust()">Simpan</button>
       </div>
     </div>
   </div>
