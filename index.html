@@ -318,9 +318,14 @@
     <div class="page" id="page-rekening">
       <div class="page-header">
         <span class="page-title">Rekening</span>
-        <button class="icon-btn" onclick="showModalRekening()" aria-label="Tambah rekening">
-          <i class="ti ti-plus"></i>
-        </button>
+        <div style="display:flex;gap:8px">
+          <button class="icon-btn" onclick="showModalTransfer()" aria-label="Transfer antar rekening" title="Transfer">
+            <i class="ti ti-transfer"></i>
+          </button>
+          <button class="icon-btn" onclick="showModalRekening()" aria-label="Tambah rekening" title="Tambah rekening">
+            <i class="ti ti-plus"></i>
+          </button>
+        </div>
       </div>
 
       <!-- Total konsolidasi -->
@@ -647,6 +652,61 @@
       <div class="modal-btns">
         <button class="modal-cancel" onclick="closeModal('modal-adjust')">Batal</button>
         <button class="modal-save" onclick="simpanAdjust()">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- MODAL TRANSFER ANTAR REKENING -->
+  <div class="modal-overlay" id="modal-transfer" style="display:none" onclick="closeModal('modal-transfer')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <h3 class="modal-title">Transfer Antar Rekening</h3>
+      <p style="font-size:13px;color:#8aA896;margin-bottom:14px;line-height:1.5">
+        Transfer tidak dihitung sebagai pemasukan atau pengeluaran — hanya memindahkan saldo antar rekening.
+      </p>
+
+      <!-- Preview transfer -->
+      <div class="transfer-preview" id="transfer-preview">
+        <div class="transfer-from" id="tp-from">Pilih rekening asal</div>
+        <div class="transfer-arrow">
+          <i class="ti ti-arrow-right" style="font-size:20px;color:#2d9b6a"></i>
+          <div class="transfer-amount-preview" id="tp-amount">Rp 0</div>
+        </div>
+        <div class="transfer-to" id="tp-to">Pilih rekening tujuan</div>
+      </div>
+
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Dari Rekening</label>
+        <select id="tf-dari" class="field-select" onchange="updateTransferPreview()">
+          <option value="">-- Pilih Rekening Asal --</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Ke Rekening</label>
+        <select id="tf-ke" class="field-select" onchange="updateTransferPreview()">
+          <option value="">-- Pilih Rekening Tujuan --</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Jumlah Transfer (Rp)</label>
+        <div style="display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--bdr2);border-radius:var(--r-sm);padding:4px 12px">
+          <span style="font-size:15px;color:var(--tx2);font-weight:500">Rp</span>
+          <input type="number" id="tf-nominal" class="field-input" style="border:none;background:transparent;font-size:20px;font-weight:600;font-family:'DM Mono',monospace;padding:8px 0;flex:1" placeholder="0" min="1" inputmode="numeric" oninput="updateTransferPreview()">
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label class="field-label">Tanggal</label>
+        <input type="date" id="tf-tanggal" class="field-input">
+      </div>
+      <div class="field" style="margin-bottom:4px">
+        <label class="field-label">Keterangan <span style="font-weight:400;color:#8aA896">(opsional)</span></label>
+        <input type="text" id="tf-catatan" class="field-input" placeholder="cth: Top up GoPay dari BCA">
+      </div>
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="closeModal('modal-transfer')">Batal</button>
+        <button class="modal-save" onclick="simpanTransfer()" id="tf-save-btn">
+          <i class="ti ti-transfer" style="font-size:15px"></i> Transfer
+        </button>
       </div>
     </div>
   </div>
