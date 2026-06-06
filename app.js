@@ -460,26 +460,71 @@ async function loadReports(bulan) {
     params.bulan = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
   }
 
+  // Set loading state
+  ["rep-kat-list","rep-subkat-list","rep-rekening-list","rep-masuk-kat"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  });
+
   try {
     const res = await callAPI("getTransaksi", params);
     const list = res.data || [];
 
-    let masuk = 0, keluar = 0;
-    const perKat = {};
+    // ── Hitung semua agregat sekaligus ──
+    let masuk = 0, keluar = 0, ctrMasuk = 0, ctrKeluar = 0;
+    const perKat    = {};   // { kategori: total }
+    const perSubkat = {};   // { "Kategori > Sub": total }
+    const perRek    = {};   // { metode: {masuk, keluar} }
+    const perKatMasuk = {}; // { kategori: total } untuk pemasukan
+
     list.forEach(tx => {
-      const n = parseFloat(tx.nominal) || 0;
-      if (tx.jenis === "Pemasukan") masuk += n;
-      else { keluar += n; perKat[tx.kategori] = (perKat[tx.kategori] || 0) + n; }
+      const n  = parseFloat(tx.nominal) || 0;
+      const kat = tx.kategori || "Lainnya";
+      const sub = tx.subkategori ? (kat + " › " + tx.subkategori) : null;
+      const rek = tx.metode || "Tidak diketahui";
+
+      if (!perRek[rek]) perRek[rek] = { masuk: 0, keluar: 0, count: 0 };
+      perRek[rek].count++;
+
+      if (tx.jenis === "Pemasukan") {
+        masuk += n; ctrMasuk++;
+        perKatMasuk[kat] = (perKatMasuk[kat] || 0) + n;
+        perRek[rek].masuk += n;
+      } else {
+        keluar += n; ctrKeluar++;
+        perKat[kat] = (perKat[kat] || 0) + n;
+        if (sub) perSubkat[sub] = (perSubkat[sub] || 0) + n;
+        perRek[rek].keluar += n;
+      }
     });
 
-    set("rep-masuk", fmtRp(masuk));
+    // ── Update ringkasan ──
+    set("rep-masuk",  fmtRp(masuk));
     set("rep-keluar", fmtRp(keluar));
+    set("rep-masuk-count",  ctrMasuk + " transaksi");
+    set("rep-keluar-count", ctrKeluar + " transaksi");
+    set("rep-total-count",  list.length);
     const cf = masuk - keluar;
     const cfEl = document.getElementById("rep-cashflow");
     if (cfEl) { cfEl.textContent = (cf >= 0 ? "+" : "") + fmtRp(cf); cfEl.style.color = cf >= 0 ? "#2d9b6a" : "#e05252"; }
 
-    const katArr = Object.entries(perKat).map(([nama, total]) => ({ nama, total })).sort((a, b) => b.total - a.total);
+    // ── Pemasukan per kategori ──
+    const katMasukArr = Object.entries(perKatMasuk)
+      .map(([nama, total]) => ({ nama, total }))
+      .sort((a, b) => b.total - a.total);
+    renderKatListIncome(katMasukArr, "rep-masuk-kat", masuk);
+
+    // ── Pengeluaran per kategori ──
+    const katArr = Object.entries(perKat)
+      .map(([nama, total]) => ({ nama, total }))
+      .sort((a, b) => b.total - a.total);
     renderKatList(katArr, "rep-kat-list");
+
+    // ── Detail per subkategori (grouped by kategori) ──
+    renderSubkatDetail(perKat, perSubkat, list);
+
+    // ── Per rekening/metode ──
+    renderRekeningReport(perRek);
 
     // Link spreadsheet
     const sid = localStorage.getItem("fk_sheet_id");
@@ -489,6 +534,126 @@ async function loadReports(bulan) {
   } catch (e) {
     showToast("Gagal memuat laporan: " + e.message, "error");
   }
+}
+
+function renderKatListIncome(list, targetId, totalMasuk) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  if (!list || !list.length) { el.innerHTML = '<div class="empty-state-sm">Belum ada pemasukan</div>'; return; }
+  const total = totalMasuk || list.reduce((s, k) => s + k.total, 0) || 1;
+  el.innerHTML = list.map((k, i) => {
+    const pct = Math.round((k.total / total) * 100);
+    const ikon = IKON_KATEGORI[k.nama] || "ti-receipt";
+    return `<div class="rep-row">
+      <div class="rep-row-left">
+        <i class="ti ${ikon}" style="font-size:15px;color:#2d9b6a;width:18px"></i>
+        <span class="rep-row-name">${k.nama}</span>
+      </div>
+      <div class="rep-row-bar-wrap">
+        <div class="rep-bar-track"><div class="rep-bar-fill" style="width:${pct}%;background:#2d9b6a"></div></div>
+      </div>
+      <span class="rep-row-pct">${pct}%</span>
+      <span class="rep-row-amt income">${fmtRp(k.total)}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderSubkatDetail(perKat, perSubkat, allTx) {
+  const el = document.getElementById("rep-subkat-list");
+  if (!el) return;
+
+  // Group subkat by parent kategori
+  const grouped = {}; // { kat: { sub: total } }
+  Object.entries(perSubkat).forEach(([key, total]) => {
+    const parts = key.split(" › ");
+    const kat = parts[0], sub = parts[1];
+    if (!grouped[kat]) grouped[kat] = {};
+    grouped[kat][sub] = total;
+  });
+
+  // Juga ambil transaksi tanpa subkategori
+  allTx.forEach(tx => {
+    if (tx.jenis !== "Pengeluaran") return;
+    const kat = tx.kategori || "Lainnya";
+    const n   = parseFloat(tx.nominal) || 0;
+    if (!tx.subkategori) {
+      if (!grouped[kat]) grouped[kat] = {};
+      grouped[kat]["(tanpa subkategori)"] = (grouped[kat]["(tanpa subkategori)"] || 0) + n;
+    }
+  });
+
+  if (!Object.keys(grouped).length) {
+    el.innerHTML = '<div class="empty-state-sm">Belum ada data subkategori</div>';
+    return;
+  }
+
+  // Urutkan kategori berdasarkan total pengeluaran (terbesar dulu)
+  const katsSorted = Object.keys(grouped).sort((a, b) => (perKat[b] || 0) - (perKat[a] || 0));
+
+  el.innerHTML = katsSorted.map(kat => {
+    const subs = grouped[kat];
+    const katTotal = perKat[kat] || Object.values(subs).reduce((s, v) => s + v, 0);
+    const subsSorted = Object.entries(subs).sort((a, b) => b[1] - a[1]);
+    const ikon = IKON_KATEGORI[kat] || "ti-receipt";
+
+    const subRows = subsSorted.map(([sub, total]) => {
+      const pct = katTotal > 0 ? Math.round((total / katTotal) * 100) : 0;
+      return `<div class="subkat-row">
+        <div class="subkat-dot"></div>
+        <span class="subkat-name">${sub}</span>
+        <div class="rep-bar-track subkat-bar"><div class="rep-bar-fill" style="width:${pct}%;background:#4caf82;opacity:.7"></div></div>
+        <span class="subkat-pct">${pct}%</span>
+        <span class="subkat-amt">${fmtRp(total)}</span>
+      </div>`;
+    }).join("");
+
+    return `<div class="subkat-group">
+      <div class="subkat-group-header">
+        <div class="subkat-group-left">
+          <div class="tx-icon-wrap exp" style="width:30px;height:30px;border-radius:8px;background:#fff0f0">
+            <i class="ti ${ikon}" style="font-size:15px;color:#e05252"></i>
+          </div>
+          <div>
+            <div class="subkat-group-name">${kat}</div>
+            <div class="subkat-group-total">${fmtRp(katTotal)}</div>
+          </div>
+        </div>
+        <i class="ti ti-chevron-down subkat-toggle" onclick="toggleSubkat(this)"></i>
+      </div>
+      <div class="subkat-body">${subRows}</div>
+    </div>`;
+  }).join("");
+}
+
+function toggleSubkat(iconEl) {
+  const body = iconEl.closest(".subkat-group").querySelector(".subkat-body");
+  const isOpen = body.style.display !== "none";
+  body.style.display = isOpen ? "none" : "block";
+  iconEl.style.transform = isOpen ? "rotate(-90deg)" : "rotate(0)";
+}
+
+function renderRekeningReport(perRek) {
+  const el = document.getElementById("rep-rekening-list");
+  if (!el) return;
+  const entries = Object.entries(perRek).sort((a, b) => (b[1].masuk + b[1].keluar) - (a[1].masuk + a[1].keluar));
+  if (!entries.length) { el.innerHTML = '<div class="empty-state-sm">Belum ada data</div>'; return; }
+  el.innerHTML = entries.map(([nama, d]) => {
+    const net = d.masuk - d.keluar;
+    return `<div class="rep-row" style="align-items:flex-start;flex-wrap:wrap;gap:4px">
+      <div class="rep-row-left" style="min-width:90px">
+        <i class="ti ti-wallet" style="font-size:14px;color:#8aA896;width:18px"></i>
+        <div>
+          <div class="rep-row-name">${nama}</div>
+          <div style="font-size:10px;color:#8aA896">${d.count} transaksi</div>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:120px">
+        ${d.masuk > 0 ? `<div style="font-size:11px;color:#2d9b6a">↑ Masuk: ${fmtRp(d.masuk)}</div>` : ""}
+        ${d.keluar > 0 ? `<div style="font-size:11px;color:#e05252">↓ Keluar: ${fmtRp(d.keluar)}</div>` : ""}
+      </div>
+      <span style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace;color:${net>=0?"#2d9b6a":"#e05252"}">${net>=0?"+":""}${fmtRp(net)}</span>
+    </div>`;
+  }).join('<div style="height:1px;background:var(--bdr);margin:4px 0"></div>');
 }
 
 function setReportPeriod(el) {
