@@ -466,3 +466,44 @@ body {
 .color-picker     { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .color-opt        { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform .15s, border-color .15s; }
 .color-opt.active { border-color: var(--tx1); transform: scale(1.15); }
+
+/* ── LAPORAN DETAIL ──────────────────────────────────────── */
+.stat-sub { font-size:11px; color:var(--tx3); margin-top:3px; }
+
+.rep-row {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 0; border-bottom:0.5px solid var(--bdr);
+}
+.rep-row:last-child { border-bottom:none; }
+.rep-row-left { display:flex; align-items:center; gap:6px; min-width:110px; }
+.rep-row-name { font-size:12px; color:var(--tx1); font-weight:500; }
+.rep-row-bar-wrap { flex:1; }
+.rep-bar-track { height:5px; background:var(--bdr); border-radius:3px; overflow:hidden; }
+.rep-bar-fill  { height:5px; border-radius:3px; transition:width .4s; }
+.rep-row-pct   { font-size:11px; font-weight:600; color:var(--tx1); min-width:28px; text-align:right; }
+.rep-row-amt   { font-size:12px; font-weight:600; font-family:'DM Mono',monospace; min-width:88px; text-align:right; }
+.rep-row-amt.income { color:var(--g500); }
+
+/* Subkategori detail */
+.subkat-group {
+  background:var(--bg2); border:1px solid var(--bdr);
+  border-radius:var(--r-sm); margin-bottom:8px; overflow:hidden;
+}
+.subkat-group-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:11px 14px; cursor:pointer;
+}
+.subkat-group-left { display:flex; align-items:center; gap:10px; }
+.subkat-group-name  { font-size:13px; font-weight:500; color:var(--tx1); }
+.subkat-group-total { font-size:11px; color:var(--tx3); margin-top:1px; }
+.subkat-toggle { font-size:16px; color:var(--tx3); transition:transform .2s; }
+.subkat-body   { padding:0 14px 10px; }
+.subkat-row {
+  display:flex; align-items:center; gap:6px;
+  padding:6px 0; border-top:0.5px solid var(--bdr);
+}
+.subkat-dot  { width:6px; height:6px; border-radius:50%; background:var(--g400); flex-shrink:0; }
+.subkat-name { font-size:12px; color:var(--tx2); min-width:80px; }
+.subkat-bar  { flex:1; }
+.subkat-pct  { font-size:11px; font-weight:600; color:var(--tx2); min-width:26px; text-align:right; }
+.subkat-amt  { font-size:12px; font-weight:600; font-family:'DM Mono',monospace; color:var(--red); min-width:80px; text-align:right; }
