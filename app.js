@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setTodayDate();
   populateKategori("Pemasukan");
   buildReportFilter();
+  buildBudgetFilter();
 
   // Cek apakah sudah punya URL
   setTimeout(() => {
@@ -30,6 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       loadDashboard();
       loadTransaksi();
+      loadRekening();
     }
   }, 1500);
 });
@@ -59,6 +61,8 @@ function goTo(page) {
   if (page === "transactions") loadTransaksi();
   if (page === "reports") loadReports();
   if (page === "home") loadDashboard();
+  if (page === "budget") loadBudget();
+  if (page === "rekening") loadRekening();
 
   window.scrollTo(0, 0);
 }
@@ -514,6 +518,402 @@ function exportCSV() {
   a.download = "finansialku-" + new Date().toISOString().split("T")[0] + ".csv";
   a.click();
   showToast("CSV berhasil diunduh", "success");
+}
+
+
+// ─── REKENING ─────────────────────────────────────────────────
+let _rekeningData = [];
+let _rekeningTipeFil = "";
+
+const TIPE_WARNA = {
+  "Bank"      : "#1a73e8",
+  "E-Wallet"  : "#00aed6",
+  "Cash"      : "#4caf82",
+  "Investasi" : "#d97706",
+  "Lainnya"   : "#888888"
+};
+
+const TIPE_IKON = {
+  "Bank"      : "ti-building-bank",
+  "E-Wallet"  : "ti-device-mobile",
+  "Cash"      : "ti-wallet",
+  "Investasi" : "ti-chart-line",
+  "Lainnya"   : "ti-credit-card"
+};
+
+async function loadRekening() {
+  const el = document.getElementById("rek-list");
+  if (el) el.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Memuat rekening...</span></div>';
+
+  try {
+    const res = await callAPI("getRekening");
+    _rekeningData = res.data || [];
+
+    // Update hero total
+    set("rek-total", fmtRp(res.total_saldo || 0));
+    const aktif = _rekeningData.filter(r => r.aktif).length;
+    set("rek-aktif-count", aktif + " rekening aktif");
+
+    // Populate dropdown metode di form transaksi
+    populateMetodeDropdown(_rekeningData);
+
+    renderRekeningList(_rekeningData, _rekeningTipeFil);
+
+  } catch (e) {
+    if (el) el.innerHTML = '<div class="empty-state-sm">Gagal memuat: ' + e.message + '</div>';
+  }
+}
+
+function populateMetodeDropdown(list) {
+  const sel = document.getElementById("f-metode");
+  if (!sel) return;
+  const aktif = (list || _rekeningData).filter(r => r.aktif);
+  sel.innerHTML = '<option value="">-- Pilih Rekening --</option>';
+  aktif.forEach(r => {
+    const opt = document.createElement("option");
+    opt.value = r.nama;
+    opt.textContent = r.nama + " (" + r.tipe + ")";
+    sel.appendChild(opt);
+  });
+}
+
+function filterRekening(el, tipe) {
+  _rekeningTipeFil = tipe;
+  document.querySelectorAll("#rek-filter .chip").forEach(c => c.classList.remove("active"));
+  el.classList.add("active");
+  renderRekeningList(_rekeningData, tipe);
+}
+
+function renderRekeningList(list, tipeFilter) {
+  const el = document.getElementById("rek-list");
+  if (!el) return;
+
+  let filtered = list.filter(r => r.aktif);
+  if (tipeFilter) filtered = filtered.filter(r => r.tipe === tipeFilter);
+
+  if (!filtered.length) {
+    el.innerHTML = '<div class="empty-state"><i class="ti ti-wallet"></i><div class="empty-title">Belum ada rekening</div><div class="empty-sub">Tap + untuk tambah rekening baru</div></div>';
+    return;
+  }
+
+  // Group by tipe
+  const groups = {};
+  filtered.forEach(r => {
+    if (!groups[r.tipe]) groups[r.tipe] = [];
+    groups[r.tipe].push(r);
+  });
+
+  el.innerHTML = Object.entries(groups).map(([tipe, items]) => {
+    const cards = items.map(r => {
+      const saldo = r.saldo_realtime !== undefined ? r.saldo_realtime : r.saldo_awal;
+      const warna = r.warna || TIPE_WARNA[r.tipe] || "#888";
+      const ikon  = TIPE_IKON[r.tipe] || "ti-credit-card";
+      const saldoColor = saldo >= 0 ? "#2d9b6a" : "#e05252";
+      return "<div class=\"rek-card\" onclick=\"showRekeningDetail(\'" + r.id + "\')\">"
+        + "<div class=\"rek-card-top\">"
+        + "<div class=\"rek-card-icon\" style=\"background:" + warna + "20;border:1.5px solid " + warna + "40\"><i class=\"ti " + ikon + "\" style=\"color:" + warna + "\"></i></div>"
+        + "<div class=\"rek-card-info\">"
+        + "<div class=\"rek-card-name\">" + r.nama + "</div>"
+        + "<div class=\"rek-card-tipe\">" + r.tipe + (r.catatan ? " · " + r.catatan : "") + "</div>"
+        + "</div>"
+        + "<div class=\"rek-card-right\">"
+        + "<div class=\"rek-card-saldo\" style=\"color:" + saldoColor + "\">" + fmtRp(saldo) + "</div>"
+        + "<div class=\"rek-card-actions\">"
+        + "<button class=\"rek-action-btn\" onclick=\"event.stopPropagation();showAdjust(\'" + r.id + "\',\'" + r.nama + "\')\" title=\"Sesuaikan saldo\"><i class=\"ti ti-adjustments-alt\"></i></button>"
+        + "<button class=\"rek-action-btn\" onclick=\"event.stopPropagation();openEditRekening(\'" + r.id + "\')\" title=\"Edit\"><i class=\"ti ti-pencil\"></i></button>"
+        + "</div></div></div>"
+        + (r.catatan ? "" : "")
+        + "</div>";
+    }).join("");
+
+    return "<div class=\"rek-group\">"
+      + "<div class=\"rek-group-label\"><i class=\"ti " + (TIPE_IKON[tipe]||"ti-credit-card") + "\" style=\"font-size:13px\"></i> " + tipe + "</div>"
+      + cards + "</div>";
+  }).join("");
+}
+
+function showRekeningDetail(id) {
+  const rek = _rekeningData.find(r => r.id === id);
+  if (!rek) return;
+  loadRekeningTx(rek.nama, rek.nama + " — " + fmtRp(rek.saldo_realtime || rek.saldo_awal));
+}
+
+async function loadRekeningTx(nama, title) {
+  const section = document.getElementById("rek-tx-section");
+  const listEl  = document.getElementById("rek-tx-list");
+  const titleEl = document.getElementById("rek-tx-title");
+  if (!section || !listEl) return;
+
+  section.style.display = "block";
+  if (titleEl) titleEl.textContent = title || nama;
+  listEl.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Memuat...</span></div>';
+  section.scrollIntoView({ behavior: "smooth" });
+
+  try {
+    const res = await callAPI("getRekeningDetail", { nama, limit: 30 });
+    if (!res.data || !res.data.length) {
+      listEl.innerHTML = '<div class="empty-state-sm">Belum ada transaksi di rekening ini</div>';
+      return;
+    }
+    listEl.innerHTML = res.data.map(tx => txCard(tx)).join("");
+  } catch (e) {
+    listEl.innerHTML = '<div class="empty-state-sm">Gagal: ' + e.message + '</div>';
+  }
+}
+
+function closeRekeningTx() {
+  const section = document.getElementById("rek-tx-section");
+  if (section) section.style.display = "none";
+}
+
+// ─── Modal Tambah / Edit Rekening ───────────────────────────
+function showModalRekening() {
+  document.getElementById("mr-id").value = "";
+  document.getElementById("mr-nama").value = "";
+  document.getElementById("mr-tipe").value = "Bank";
+  document.getElementById("mr-saldo").value = "";
+  document.getElementById("mr-catatan").value = "";
+  document.getElementById("mr-warna").value = "#4caf82";
+  document.querySelectorAll(".color-opt").forEach(c => c.classList.toggle("active", c.dataset.color === "#4caf82"));
+  document.getElementById("mr-title").textContent = "Tambah Rekening";
+  document.getElementById("mr-del-btn").style.display = "none";
+  document.getElementById("modal-rekening").style.display = "flex";
+}
+
+function openEditRekening(id) {
+  const r = _rekeningData.find(x => x.id === id);
+  if (!r) return;
+  document.getElementById("mr-id").value      = r.id;
+  document.getElementById("mr-nama").value    = r.nama;
+  document.getElementById("mr-tipe").value    = r.tipe;
+  document.getElementById("mr-saldo").value   = r.saldo_awal;
+  document.getElementById("mr-catatan").value = r.catatan || "";
+  document.getElementById("mr-warna").value   = r.warna || "#4caf82";
+  document.querySelectorAll(".color-opt").forEach(c => c.classList.toggle("active", c.dataset.color === (r.warna || "#4caf82")));
+  document.getElementById("mr-title").textContent = "Edit Rekening";
+  document.getElementById("mr-del-btn").style.display = "block";
+  document.getElementById("modal-rekening").style.display = "flex";
+}
+
+function pickColor(el) {
+  document.querySelectorAll(".color-opt").forEach(c => c.classList.remove("active"));
+  el.classList.add("active");
+  document.getElementById("mr-warna").value = el.dataset.color;
+}
+
+async function saveRekening() {
+  const id     = document.getElementById("mr-id").value;
+  const nama   = document.getElementById("mr-nama").value.trim();
+  const tipe   = document.getElementById("mr-tipe").value;
+  const saldo  = document.getElementById("mr-saldo").value;
+  const catatan= document.getElementById("mr-catatan").value.trim();
+  const warna  = document.getElementById("mr-warna").value;
+
+  if (!nama) { showToast("Nama rekening wajib diisi", "error"); return; }
+  if (!tipe) { showToast("Pilih tipe rekening", "error"); return; }
+
+  const payload = { nama, tipe, saldo_awal: parseFloat(saldo) || 0, warna, catatan };
+
+  try {
+    if (id) {
+      await postAPI("updateRekening", { id, ...payload });
+      showToast("Rekening diperbarui!", "success");
+    } else {
+      await postAPI("addRekening", payload);
+      showToast("Rekening ditambahkan!", "success");
+    }
+    closeModal("modal-rekening");
+    loadRekening();
+  } catch (e) {
+    showToast("Gagal: " + e.message, "error");
+  }
+}
+
+async function deleteRekeningItem() {
+  const id = document.getElementById("mr-id").value;
+  if (!id) return;
+  if (!confirm("Nonaktifkan rekening ini?\nData transaksi tidak akan dihapus.")) return;
+  try {
+    await postAPI("deleteRekening", { id });
+    showToast("Rekening dinonaktifkan", "success");
+    closeModal("modal-rekening");
+    loadRekening();
+  } catch (e) {
+    showToast("Gagal: " + e.message, "error");
+  }
+}
+
+// ─── Adjust Saldo ───────────────────────────────────────────
+function showAdjust(id, nama) {
+  document.getElementById("adj-rek-nama").value = nama;
+  document.getElementById("adj-rek-name").textContent = nama;
+  document.getElementById("adj-nominal").value = "";
+  document.getElementById("adj-catatan").value = "";
+  document.getElementById("modal-adjust").style.display = "flex";
+}
+
+async function simpanAdjust() {
+  const nama    = document.getElementById("adj-rek-nama").value;
+  const nominal = document.getElementById("adj-nominal").value;
+  const catatan = document.getElementById("adj-catatan").value;
+
+  if (!nominal || nominal === "0") { showToast("Masukkan nominal penyesuaian", "error"); return; }
+
+  try {
+    await postAPI("adjustSaldo", { rekening_nama: nama, nominal: parseFloat(nominal), catatan });
+    showToast("Saldo disesuaikan!", "success");
+    closeModal("modal-adjust");
+    loadRekening();
+  } catch (e) {
+    showToast("Gagal: " + e.message, "error");
+  }
+}
+
+// ─── BUDGET ──────────────────────────────────────────────────
+let budgetBulanAktif = "";
+
+function getBulanIni() {
+  const now = new Date();
+  return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+}
+
+function buildBudgetFilter() {
+  const el = document.getElementById("budget-filter");
+  if (!el) return;
+  const bln = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+  const now = new Date();
+  let html = "";
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+    const label = i===0 ? "Bulan Ini" : bln[d.getMonth()]+" "+d.getFullYear();
+    html += "<button class=\"chip "+(i===0?"active":"")+"\" onclick=\"setBudgetBulan(this,\'"+val+"\')\">"+label+"</button>";
+  }
+  const dep = new Date(now.getFullYear(), now.getMonth()+1, 1);
+  const dv = dep.getFullYear()+"-"+String(dep.getMonth()+1).padStart(2,"0");
+  html += "<button class=\"chip\" onclick=\"setBudgetBulan(this,\'"+dv+"\')\">Bulan Depan</button>";
+  el.innerHTML = html;
+  budgetBulanAktif = getBulanIni();
+}
+
+function setBudgetBulan(el, bulan) {
+  budgetBulanAktif = bulan;
+  document.querySelectorAll("#budget-filter .chip").forEach(c => c.classList.remove("active"));
+  el.classList.add("active");
+  loadBudget();
+}
+
+async function loadBudget() {
+  if (!budgetBulanAktif) buildBudgetFilter();
+  const el = document.getElementById("budget-list");
+  if (el) el.innerHTML = "<div class=\"loading-state\"><div class=\"spinner\"></div><span>Memuat budget...</span></div>";
+  try {
+    const res = await callAPI("getBudgetProgress", { bulan: budgetBulanAktif });
+    renderBudgetSummary(res);
+    renderBudgetList(res.data || [], res.message);
+  } catch (e) {
+    if (el) el.innerHTML = "<div class=\"empty-state-sm\">Gagal memuat: "+e.message+"</div>";
+  }
+}
+
+function renderBudgetSummary(res) {
+  set("bsum-limit", fmtRp(res.total_limit || 0));
+  set("bsum-used",  fmtRp(res.total_terpakai || 0));
+  set("bsum-sisa",  fmtRp(res.total_sisa || 0));
+  const pct = Math.min(res.total_pct || 0, 100);
+  const fillEl = document.getElementById("bsum-fill");
+  const pctEl  = document.getElementById("bsum-pct");
+  if (pctEl) pctEl.textContent = (res.total_pct || 0) + "%";
+  if (fillEl) {
+    fillEl.style.width = pct + "%";
+    fillEl.style.background = pct >= 100 ? "#e05252" : pct >= 80 ? "#d97706" : "#2d9b6a";
+  }
+  const siEl = document.getElementById("bsum-sisa");
+  if (siEl) siEl.style.color = (res.total_sisa || 0) >= 0 ? "#2d9b6a" : "#e05252";
+}
+
+function renderBudgetList(list, emptyMsg) {
+  const el = document.getElementById("budget-list");
+  if (!el) return;
+  if (!list || list.length === 0) {
+    el.innerHTML = "<div class=\"empty-state\"><i class=\"ti ti-target\"></i><div class=\"empty-title\">"+(emptyMsg||"Belum ada budget")+"</div><div class=\"empty-sub\">Tap + untuk set budget per kategori</div></div>";
+    return;
+  }
+  el.innerHTML = list.map(function(b) {
+    const pct = Math.min(b.pct, 100);
+    const barColor = b.status==="over" ? "#e05252" : b.status==="warning" ? "#d97706" : "#2d9b6a";
+    const badgeCls = b.status==="over" ? "badge-over" : b.status==="warning" ? "badge-warn" : "badge-aman";
+    const badgeTxt = b.status==="over" ? "Melebihi!" : b.status==="warning" ? "Hampir habis" : "Aman";
+    const ikon     = IKON_KATEGORI[b.kategori] || "ti-receipt";
+    const sisakol  = b.sisa >= 0 ? "#2d9b6a" : "#e05252";
+    return "<div class=\"budget-card\" onclick=\"editBudget_(\'"+b.id+"\',"+b.limit_budget+")\">"
+      + "<div class=\"bc-top\"><div class=\"bc-left\"><div class=\"tx-icon-wrap\" style=\"background:#f0faf4\"><i class=\"ti "+ikon+"\" style=\"color:#2d9b6a\"></i></div>"
+      + "<div><div class=\"bc-name\">"+b.kategori+"</div><div class=\"bc-sub\">"+fmtRp(b.terpakai)+" dari "+fmtRp(b.limit_budget)+"</div></div></div>"
+      + "<div style=\"text-align:right\"><div class=\"budget-badge "+badgeCls+"\">"+badgeTxt+"</div><div class=\"bc-pct\">"+b.pct+"%</div></div></div>"
+      + "<div class=\"bc-track\"><div class=\"bc-fill\" style=\"width:"+pct+"%;background:"+barColor+"\"></div></div>"
+      + "<div class=\"bc-bottom\"><span>Sisa: <b style=\"color:"+sisakol+"\">"+fmtRp(b.sisa)+"</b></span>"
+      + (b.catatan ? "<span style=\"font-size:11px;color:#8aA896\">"+b.catatan+"</span>" : "")
+      + "</div></div>";
+  }).join("");
+  // store budget data for editing
+  window._budgetData = {};
+  list.forEach(function(b){ window._budgetData[b.id] = b; });
+}
+
+function editBudget_(id, limit) {
+  const b = window._budgetData && window._budgetData[id];
+  if (!b) return;
+  document.getElementById("mb-id").value = b.id;
+  document.getElementById("mb-bulan").value = budgetBulanAktif || getBulanIni();
+  document.getElementById("mb-kategori").value = b.kategori;
+  document.getElementById("mb-limit").value = b.limit_budget;
+  document.getElementById("mb-catatan").value = b.catatan || "";
+  document.getElementById("modal-budget-title").textContent = "Edit Budget";
+  document.getElementById("mb-del-btn").style.display = "block";
+  document.getElementById("modal-budget").style.display = "flex";
+}
+
+function showModalBudget() {
+  document.getElementById("mb-id").value = "";
+  document.getElementById("mb-bulan").value = budgetBulanAktif || getBulanIni();
+  document.getElementById("mb-kategori").value = "";
+  document.getElementById("mb-limit").value = "";
+  document.getElementById("mb-catatan").value = "";
+  document.getElementById("modal-budget-title").textContent = "Set Budget Kategori";
+  document.getElementById("mb-del-btn").style.display = "none";
+  document.getElementById("modal-budget").style.display = "flex";
+}
+
+async function saveBudget() {
+  const bulan    = document.getElementById("mb-bulan").value;
+  const kategori = document.getElementById("mb-kategori").value;
+  const limit    = document.getElementById("mb-limit").value;
+  const catatan  = document.getElementById("mb-catatan").value;
+  if (!bulan)                           { showToast("Pilih bulan dulu", "error"); return; }
+  if (!kategori)                        { showToast("Pilih kategori dulu", "error"); return; }
+  if (!limit || parseFloat(limit) <= 0) { showToast("Masukkan limit budget", "error"); return; }
+  try {
+    await postAPI("setBudget", { bulan, kategori, limit_budget: parseFloat(limit), catatan });
+    showToast("Budget tersimpan!", "success");
+    closeModal("modal-budget");
+    loadBudget();
+  } catch (e) {
+    showToast("Gagal simpan: " + e.message, "error");
+  }
+}
+
+async function deleteBudgetItem() {
+  const id = document.getElementById("mb-id").value;
+  if (!id) return;
+  if (!confirm("Hapus budget ini?")) return;
+  try {
+    await postAPI("deleteBudget", { id });
+    showToast("Budget dihapus", "success");
+    closeModal("modal-budget");
+    loadBudget();
+  } catch (e) {
+    showToast("Gagal hapus: " + e.message, "error");
+  }
 }
 
 // ─── PENGATURAN ──────────────────────────────────────────────
