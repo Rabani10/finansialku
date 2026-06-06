@@ -221,32 +221,82 @@
     <div class="page" id="page-reports">
       <div class="page-header">
         <span class="page-title">Laporan</span>
+        <button class="icon-btn" onclick="exportCSV()" aria-label="Export CSV" title="Export CSV">
+          <i class="ti ti-download"></i>
+        </button>
       </div>
 
       <div class="filter-scroll" id="report-filter">
         <button class="chip active" onclick="setReportPeriod(this)" data-month="">Bulan Ini</button>
       </div>
 
+      <!-- Ringkasan angka -->
       <div class="section">
         <div class="stat-grid">
-          <div class="stat-card"><div class="stat-label">Pemasukan</div><div class="stat-val income" id="rep-masuk">Rp 0</div></div>
-          <div class="stat-card"><div class="stat-label">Pengeluaran</div><div class="stat-val expense" id="rep-keluar">Rp 0</div></div>
+          <div class="stat-card">
+            <div class="stat-label"><i class="ti ti-arrow-up-right" style="color:#2d9b6a"></i> Pemasukan</div>
+            <div class="stat-val income" id="rep-masuk">Rp 0</div>
+            <div class="stat-sub" id="rep-masuk-count">0 transaksi</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label"><i class="ti ti-arrow-down-right" style="color:#e05252"></i> Pengeluaran</div>
+            <div class="stat-val expense" id="rep-keluar">Rp 0</div>
+            <div class="stat-sub" id="rep-keluar-count">0 transaksi</div>
+          </div>
         </div>
         <div class="cashflow-card">
           <div>
             <div class="stat-label">Cashflow Bersih</div>
             <div class="cashflow-val" id="rep-cashflow">Rp 0</div>
           </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:#8aA896">Total transaksi</div>
+            <div style="font-size:14px;font-weight:600;color:#0f1a14" id="rep-total-count">0</div>
+          </div>
         </div>
       </div>
 
+      <!-- Top pemasukan -->
       <div class="section">
-        <div class="section-hdr"><span class="section-title">Detail per Kategori</span></div>
+        <div class="section-hdr">
+          <span class="section-title">Detail Pemasukan</span>
+        </div>
+        <div class="card" id="rep-masuk-kat">
+          <div class="empty-state-sm">Belum ada data</div>
+        </div>
+      </div>
+
+      <!-- Detail Kategori Pengeluaran -->
+      <div class="section">
+        <div class="section-hdr">
+          <span class="section-title">Detail per Kategori</span>
+        </div>
         <div class="card" id="rep-kat-list">
           <div class="empty-state-sm">Belum ada data</div>
         </div>
       </div>
 
+      <!-- Detail Subkategori -->
+      <div class="section">
+        <div class="section-hdr">
+          <span class="section-title">Detail per Subkategori</span>
+        </div>
+        <div id="rep-subkat-list">
+          <div class="empty-state-sm">Belum ada data</div>
+        </div>
+      </div>
+
+      <!-- Detail per Rekening/Metode -->
+      <div class="section">
+        <div class="section-hdr">
+          <span class="section-title">Detail per Rekening</span>
+        </div>
+        <div class="card" id="rep-rekening-list">
+          <div class="empty-state-sm">Belum ada data</div>
+        </div>
+      </div>
+
+      <!-- Export -->
       <div class="section" style="padding-bottom:90px">
         <div class="section-hdr"><span class="section-title">Export Data</span></div>
         <div class="export-grid">
@@ -394,6 +444,15 @@
       </div>
 
       <div class="settings-group">
+        <div class="settings-label">Rekening & Dompet</div>
+        <div class="settings-item" onclick="goTo('rekening')">
+          <div class="s-icon"><i class="ti ti-wallet"></i></div>
+          <div class="s-text"><div class="s-name">Kelola Rekening</div><div class="s-desc" id="s-rek-desc">BCA, GoPay, Cash, dll</div></div>
+          <i class="ti ti-chevron-right s-arrow"></i>
+        </div>
+      </div>
+
+      <div class="settings-group">
         <div class="settings-label">Preferensi</div>
         <div class="settings-item" onclick="showNameSetup()">
           <div class="s-icon"><i class="ti ti-user"></i></div>
@@ -424,8 +483,8 @@
     <button class="nav-item active" id="nav-home" onclick="goTo('home')" aria-label="Beranda">
       <i class="ti ti-home"></i><span>Beranda</span>
     </button>
-    <button class="nav-item" id="nav-rekening" onclick="goTo('rekening')" aria-label="Rekening">
-      <i class="ti ti-wallet"></i><span>Rekening</span>
+    <button class="nav-item" id="nav-reports" onclick="goTo('reports')" aria-label="Laporan">
+      <i class="ti ti-chart-pie"></i><span>Laporan</span>
     </button>
     <div style="width:60px;flex-shrink:0"></div><!-- space for FAB -->
     <button class="nav-item" id="nav-budget" onclick="goTo('budget')" aria-label="Budget">
