@@ -730,10 +730,26 @@ async function loadRekening() {
     const res = await callAPI("getRekening");
     _rekeningData = res.data || [];
 
+    // Debug: log ke console
+    console.log("getRekening response:", JSON.stringify(res).substring(0, 300));
+
     // Update hero total
     set("rek-total", fmtRp(res.total_saldo || 0));
-    const aktif = _rekeningData.filter(r => r.aktif).length;
-    set("rek-aktif-count", aktif + " rekening aktif");
+
+    // Hitung aktif dengan cara yang lebih toleran
+    const aktifList = _rekeningData.filter(r => {
+      if (typeof r.aktif === "boolean") return r.aktif;
+      const s = String(r.aktif).trim().toUpperCase();
+      return s === "TRUE" || s === "1";
+    });
+    set("rek-aktif-count", aktifList.length + " rekening aktif");
+
+    // Normalize field aktif ke boolean murni
+    _rekeningData = _rekeningData.map(r => ({
+      ...r,
+      aktif: typeof r.aktif === "boolean" ? r.aktif
+             : ["TRUE","1","YES"].includes(String(r.aktif).trim().toUpperCase())
+    }));
 
     // Populate dropdown metode di form transaksi
     populateMetodeDropdown(_rekeningData);
@@ -741,7 +757,8 @@ async function loadRekening() {
     renderRekeningList(_rekeningData, _rekeningTipeFil);
 
   } catch (e) {
-    if (el) el.innerHTML = '<div class="empty-state-sm">Gagal memuat: ' + e.message + '</div>';
+    console.error("loadRekening error:", e);
+    if (el) el.innerHTML = '<div class="empty-state-sm">Gagal memuat: ' + e.message + '<br><small>Pastikan URL Web App sudah benar dan di-deploy ulang.</small></div>';
   }
 }
 
@@ -769,11 +786,20 @@ function renderRekeningList(list, tipeFilter) {
   const el = document.getElementById("rek-list");
   if (!el) return;
 
-  let filtered = list.filter(r => r.aktif);
+  let filtered = list.filter(r => r.aktif === true);
   if (tipeFilter) filtered = filtered.filter(r => r.tipe === tipeFilter);
 
   if (!filtered.length) {
-    el.innerHTML = '<div class="empty-state"><i class="ti ti-wallet"></i><div class="empty-title">Belum ada rekening</div><div class="empty-sub">Tap + untuk tambah rekening baru</div></div>';
+    // Cek apakah ada data tapi semua non-aktif
+    const adaDataNonAktif = list.length > 0 && list.every(r => !r.aktif);
+    if (adaDataNonAktif) {
+      el.innerHTML = '<div class="empty-state-sm">Semua rekening dinonaktifkan. Buka Pengaturan rekening untuk mengaktifkan kembali.</div>';
+    } else if (list.length === 0) {
+      el.innerHTML = '<div class="empty-state"><i class="ti ti-wallet"></i><div class="empty-title">Belum ada rekening</div><div class="empty-sub">Tap + untuk tambah rekening baru</div></div>';
+    } else {
+      // Ada data tapi filter tipe tidak cocok
+      el.innerHTML = '<div class="empty-state-sm">Tidak ada rekening dengan tipe ini.</div>';
+    }
     return;
   }
 
@@ -904,7 +930,8 @@ async function saveRekening() {
       showToast("Rekening ditambahkan!", "success");
     }
     closeModal("modal-rekening");
-    loadRekening();
+    // Delay singkat agar GAS selesai menulis sebelum kita baca ulang
+    setTimeout(() => loadRekening(), 1500);
   } catch (e) {
     showToast("Gagal: " + e.message, "error");
   }
@@ -918,7 +945,7 @@ async function deleteRekeningItem() {
     await postAPI("deleteRekening", { id });
     showToast("Rekening dinonaktifkan", "success");
     closeModal("modal-rekening");
-    loadRekening();
+    setTimeout(() => loadRekening(), 1500);
   } catch (e) {
     showToast("Gagal: " + e.message, "error");
   }
