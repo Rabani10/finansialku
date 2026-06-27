@@ -95,16 +95,52 @@ async function postAPI(action, body = {}) {
   const url = getGasUrl();
   if (!url) throw new Error("URL Web App belum diatur. Buka Pengaturan.");
 
-  // Encode data sebagai parameter GET — GAS tidak support POST dari browser (CORS)
-  const params = { action, data: JSON.stringify(body) };
-  const qs = new URLSearchParams(params);
+  // Kirim sebagai flat URL params + data JSON — dua cara sekaligus untuk maksimal kompatibilitas
+  // GAS tidak support CORS POST, jadi kita pakai GET dengan semua data di URL
+  const flatParams = { action };
+
+  // Flatten body ke params individual (untuk field sederhana)
+  Object.entries(body).forEach(([k, v]) => {
+    if (v !== undefined && v !== null) {
+      flatParams[k] = String(v);
+    }
+  });
+
+  // Juga kirim sebagai JSON encoded untuk parseBody sebagai fallback
+  flatParams["data"] = JSON.stringify(body);
+
+  const qs = new URLSearchParams(flatParams);
   const fullUrl = url + "?" + qs.toString();
 
   const res = await fetch(fullUrl, { method: "GET", redirect: "follow" });
 
   if (!res.ok) throw new Error("HTTP error: " + res.status);
-  const result = await res.json();
-  if (result.status === "error") throw new Error(result.message);
+
+  let result;
+  try {
+    const text = await res.text();
+    // Coba parse JSON
+    try {
+      result = JSON.parse(text);
+    } catch (parseErr) {
+      // GAS redirect kadang balik HTML — coba ambil JSON dari dalam
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[0]);
+      } else {
+        console.error("Response bukan JSON:", text.substring(0, 200));
+        throw new Error("Response tidak valid dari server. Pastikan Web App sudah di-deploy ulang.");
+      }
+    }
+  } catch (e) {
+    if (e.message.includes("Response")) throw e;
+    throw new Error("Gagal membaca response: " + e.message);
+  }
+
+  // Log response untuk debug
+  console.log("postAPI response (" + action + "):", JSON.stringify(result).substring(0, 200));
+
+  if (result && result.status === "error") throw new Error(result.message || "Terjadi kesalahan di server");
   return result;
 }
 
@@ -921,19 +957,23 @@ async function saveRekening() {
 
   const payload = { nama, tipe, saldo_awal: parseFloat(saldo) || 0, warna, catatan };
 
+  console.log("saveRekening payload:", JSON.stringify(payload));
   try {
+    let res;
     if (id) {
-      await postAPI("updateRekening", { id, ...payload });
+      res = await postAPI("updateRekening", { id, ...payload });
+      console.log("updateRekening response:", JSON.stringify(res));
       showToast("Rekening diperbarui!", "success");
     } else {
-      await postAPI("addRekening", payload);
-      showToast("Rekening ditambahkan!", "success");
+      res = await postAPI("addRekening", payload);
+      console.log("addRekening response:", JSON.stringify(res));
+      showToast("✅ Rekening ditambahkan!", "success");
     }
     closeModal("modal-rekening");
-    // Delay singkat agar GAS selesai menulis sebelum kita baca ulang
-    setTimeout(() => loadRekening(), 1500);
+    setTimeout(() => loadRekening(), 2000);
   } catch (e) {
-    showToast("Gagal: " + e.message, "error");
+    console.error("saveRekening error:", e);
+    showToast("Gagal: " + e.message, "error", 5000);
   }
 }
 
