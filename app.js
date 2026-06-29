@@ -1032,14 +1032,28 @@ function showModalTransfer() {
     return;
   }
 
-  // Populate dropdowns dari data rekening yang sudah dimuat
-  const opts = aktif.map(r => {
-    const saldo = r.saldo_realtime !== undefined ? r.saldo_realtime : r.saldo_awal;
-    return `<option value="${r.nama}" data-saldo="${saldo}">${r.nama} (${fmtRp(saldo)})</option>`;
-  }).join("");
+  // Gunakan createElement agar nama rekening dengan karakter apapun aman
+  function buildSelect(elId) {
+    const sel = document.getElementById(elId);
+    sel.innerHTML = "";
+    const defOpt = document.createElement("option");
+    defOpt.value = "";
+    defOpt.textContent = "-- Pilih Rekening --";
+    sel.appendChild(defOpt);
 
-  document.getElementById("tf-dari").innerHTML = '<option value="">-- Pilih Rekening Asal --</option>' + opts;
-  document.getElementById("tf-ke").innerHTML   = '<option value="">-- Pilih Rekening Tujuan --</option>' + opts;
+    aktif.forEach(r => {
+      const saldo = r.saldo_realtime !== undefined ? r.saldo_realtime : r.saldo_awal;
+      const opt   = document.createElement("option");
+      opt.value           = r.nama;          // value set via property, bukan attribute — aman 100%
+      opt.dataset.saldo   = saldo;
+      opt.textContent     = r.nama + "  (" + fmtRp(saldo) + ")";
+      sel.appendChild(opt);
+    });
+  }
+
+  buildSelect("tf-dari");
+  buildSelect("tf-ke");
+
   document.getElementById("tf-nominal").value  = "";
   document.getElementById("tf-catatan").value  = "";
   document.getElementById("tf-tanggal").value  = new Date().toISOString().split("T")[0];
