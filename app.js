@@ -154,8 +154,12 @@ async function loadDashboard() {
     const data = await callAPI("getDashboard");
     STATE.dashboardData = data;
 
-    // Hero
-    set("hero-saldo", fmtRp(data.saldo));
+    // Hero — gunakan saldo_rekening (saldo awal + transaksi) jika tersedia
+    // Jika tidak ada (rekening belum disetup), fallback ke cashflow murni
+    const saldoTampil = (data.saldo_rekening !== null && data.saldo_rekening !== undefined)
+                        ? data.saldo_rekening
+                        : data.saldo;
+    set("hero-saldo", fmtRp(saldoTampil));
     set("hero-masuk", fmtRp(data.pemasukan_bulan));
     set("hero-keluar", fmtRp(data.pengeluaran_bulan));
 
@@ -166,7 +170,7 @@ async function loadDashboard() {
     renderBarChart(data.tren_bulanan || []);
 
     // Kategori
-    renderKatList(data.per_kategori || [], "kat-list");
+    renderKatList(data.per_kategori || [], "kat-list", 5);
 
     // Transaksi terbaru (5)
     const txRes = await callAPI("getTransaksi", { limit: 5 });
@@ -219,7 +223,7 @@ function renderBarChart(tren) {
   }).join("");
 }
 
-function renderKatList(list, targetId) {
+function renderKatList(list, targetId, limit) {
   const el = document.getElementById(targetId);
   if (!el) return;
   if (!list || list.length === 0) {
@@ -227,13 +231,17 @@ function renderKatList(list, targetId) {
     return;
   }
   const total = list.reduce((s, k) => s + k.total, 0) || 1;
-  el.innerHTML = list.slice(0, 5).map((k, i) => {
-    const pct = Math.round((k.total / total) * 100);
-    return `<div class="kat-row">
-      <span class="kat-name">${k.nama}</span>
-      <div class="kat-track"><div class="kat-fill" style="width:${pct}%;background:${WARNA_KATEGORI[i % WARNA_KATEGORI.length]}"></div></div>
-      <span class="kat-pct">${pct}%</span>
-    </div>`;
+  // limit = angka -> batasi tampilan (dashboard)
+  // limit = undefined/null -> tampil semua (laporan)
+  const shown = (limit && limit > 0) ? list.slice(0, limit) : list;
+  el.innerHTML = shown.map((k, i) => {
+    const pct   = Math.round((k.total / total) * 100);
+    const warna = WARNA_KATEGORI[i % WARNA_KATEGORI.length];
+    return '<div class="kat-row">' +
+      '<span class="kat-name">' + k.nama + '</span>' +
+      '<div class="kat-track"><div class="kat-fill" style="width:' + pct + '%;background:' + warna + '"></div></div>' +
+      '<span class="kat-pct">' + pct + '%</span>' +
+      '</div>';
   }).join("");
 }
 
@@ -503,111 +511,297 @@ async function loadReports(bulan) {
     params.bulan = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
   }
 
-  // Set loading state
-  ["rep-kat-list","rep-subkat-list","rep-rekening-list","rep-masuk-kat"].forEach(id => {
+  // Loading state semua section
+  ["rep-kat-list","rep-subkat-list","rep-masuk-kat","rep-rekening-list","rep-transfer-list"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
   });
 
   try {
-    const res = await callAPI("getTransaksi", params);
-    const list = res.data || [];
+    // Ambil data bulan ini + 6 bulan terakhir untuk tren
+    const [res, resAll] = await Promise.all([
+      callAPI("getTransaksi", params),
+      callAPI("getTransaksi", { limit: 500 })
+    ]);
+    const list    = res.data    || [];
+    const listAll = resAll.data || [];
 
-    // ── Hitung semua agregat sekaligus ──
+    // ── Agregat bulan ini ──
     let masuk = 0, keluar = 0, ctrMasuk = 0, ctrKeluar = 0;
-    const perKat    = {};   // { kategori: total }
-    const perSubkat = {};   // { "Kategori > Sub": total }
-    const perRek    = {};   // { metode: {masuk, keluar} }
-    const perKatMasuk = {}; // { kategori: total } untuk pemasukan
+    const perKat = {}, perSubkat = {}, perRek = {}, perKatMasuk = {};
+    const transferList = [];
 
     list.forEach(tx => {
       const n   = parseFloat(tx.nominal) || 0;
       const kat = tx.kategori || "Lainnya";
       const sub = tx.subkategori ? (kat + " › " + tx.subkategori) : null;
-      const rek = tx.metode || "Tidak diketahui";
+      const rek = tx.metode || "—";
 
-      // Transfer — hanya catat di rekening, tidak di cashflow laporan
       if (tx.jenis === "Transfer") {
-        if (!perRek[rek]) perRek[rek] = { masuk: 0, keluar: 0, count: 0, transfer: 0 };
-        perRek[rek].transfer = (perRek[rek].transfer || 0) + n;
-        perRek[rek].count++;
+        if (tx.id && tx.id.endsWith("-OUT")) {
+          transferList.push(tx);
+          // Catat di rekening
+          if (!perRek[rek]) perRek[rek] = { masuk:0, keluar:0, transfer:0, count:0 };
+          perRek[rek].transfer = (perRek[rek].transfer||0) + n;
+          perRek[rek].count++;
+        }
         return;
       }
 
-      if (!perRek[rek]) perRek[rek] = { masuk: 0, keluar: 0, count: 0, transfer: 0 };
+      if (!perRek[rek]) perRek[rek] = { masuk:0, keluar:0, transfer:0, count:0 };
       perRek[rek].count++;
 
       if (tx.jenis === "Pemasukan") {
         masuk += n; ctrMasuk++;
-        perKatMasuk[kat] = (perKatMasuk[kat] || 0) + n;
+        perKatMasuk[kat] = (perKatMasuk[kat]||0) + n;
         perRek[rek].masuk += n;
       } else {
         keluar += n; ctrKeluar++;
-        perKat[kat] = (perKat[kat] || 0) + n;
-        if (sub) perSubkat[sub] = (perSubkat[sub] || 0) + n;
+        if (kat !== "Transfer Keluar" && kat !== "Transfer Masuk") {
+          perKat[kat] = (perKat[kat]||0) + n;
+          if (sub) perSubkat[sub] = (perSubkat[sub]||0) + n;
+        }
         perRek[rek].keluar += n;
       }
     });
 
-    // ── Update ringkasan ──
-    set("rep-masuk",  fmtRp(masuk));
-    set("rep-keluar", fmtRp(keluar));
-    set("rep-masuk-count",  ctrMasuk + " transaksi");
-    set("rep-keluar-count", ctrKeluar + " transaksi");
-    set("rep-total-count",  list.length);
+    // ── Tren 6 bulan dari semua transaksi ──
+    const trenMap = {};
+    listAll.forEach(tx => {
+      if (tx.jenis === "Transfer") return;
+      const tgl = String(tx.tanggal||"").substring(0,7);
+      if (!tgl) return;
+      if (!trenMap[tgl]) trenMap[tgl] = { p:0, k:0 };
+      if (tx.jenis === "Pemasukan") trenMap[tgl].p += parseFloat(tx.nominal)||0;
+      else trenMap[tgl].k += parseFloat(tx.nominal)||0;
+    });
+    const trenKeys = Object.keys(trenMap).sort().slice(-6);
+
+    // ── Update hero summary ──
+    set("rep-masuk",       fmtRp(masuk));
+    set("rep-keluar",      fmtRp(keluar));
+    set("rep-masuk-count", ctrMasuk + " transaksi");
+    set("rep-keluar-count",ctrKeluar + " transaksi");
+    const nonTransfer = list.filter(tx => tx.jenis !== "Transfer");
+    set("rep-total-count", nonTransfer.length);
+
     const cf = masuk - keluar;
     const cfEl = document.getElementById("rep-cashflow");
-    if (cfEl) { cfEl.textContent = (cf >= 0 ? "+" : "") + fmtRp(cf); cfEl.style.color = cf >= 0 ? "#2d9b6a" : "#e05252"; }
+    if (cfEl) { cfEl.textContent = (cf>=0?"+":"") + fmtRp(cf); cfEl.style.color = cf>=0?"#2d9b6a":"#e05252"; }
 
-    // ── Pemasukan per kategori ──
-    const katMasukArr = Object.entries(perKatMasuk)
-      .map(([nama, total]) => ({ nama, total }))
-      .sort((a, b) => b.total - a.total);
-    renderKatListIncome(katMasukArr, "rep-masuk-kat", masuk);
+    const savingRate = masuk > 0 ? Math.round((cf/masuk)*100) : 0;
+    set("rep-saving-rate", savingRate + "%");
+    const fillEl = document.getElementById("rep-saving-fill");
+    if (fillEl) {
+      fillEl.style.width = Math.min(Math.max(savingRate,0),100) + "%";
+      fillEl.style.background = savingRate >= 30 ? "#2d9b6a" : savingRate >= 10 ? "#d97706" : "#e05252";
+    }
 
-    // ── Pengeluaran per kategori ──
-    const katArr = Object.entries(perKat)
-      .map(([nama, total]) => ({ nama, total }))
-      .sort((a, b) => b.total - a.total);
-    renderKatList(katArr, "rep-kat-list");
+    // ── Render semua section ──
+    const katMasukArr = Object.entries(perKatMasuk).map(([n,t])=>({nama:n,total:t})).sort((a,b)=>b.total-a.total);
+    const katArr      = Object.entries(perKat).map(([n,t])=>({nama:n,total:t})).sort((a,b)=>b.total-a.total);
 
-    // ── Detail per subkategori (grouped by kategori) ──
+    set("rep-masuk-total-lbl", fmtRp(masuk));
+    set("rep-kat-count-lbl",  katArr.length + " kategori");
+
+    renderKatListFull(katMasukArr, "rep-masuk-kat", masuk, "#2d9b6a");
+    renderKatListFull(katArr,      "rep-kat-list",  keluar, "#e05252");
     renderSubkatDetail(perKat, perSubkat, list);
-
-    // ── Per rekening/metode ──
-    renderRekeningReport(perRek);
+    renderRekeningReportFull(perRek);
+    renderTransferList(transferList);
+    renderDonutChart(katArr.slice(0,6), keluar);
+    renderTrenChart(trenKeys, trenMap);
+    renderTrenTable(trenKeys, trenMap);
 
     // Link spreadsheet
     const sid = localStorage.getItem("fk_sheet_id");
     const link = document.getElementById("sheets-link");
-    if (link) link.href = sid ? `https://docs.google.com/spreadsheets/d/${sid}/edit` : "#";
+    if (link) link.href = sid ? "https://docs.google.com/spreadsheets/d/"+sid+"/edit" : "#";
 
   } catch (e) {
     showToast("Gagal memuat laporan: " + e.message, "error");
   }
 }
 
-function renderKatListIncome(list, targetId, totalMasuk) {
+// ── Tab switcher ──
+function switchRepTab(el, tab) {
+  document.querySelectorAll(".rep-tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".rep-section").forEach(s => s.classList.remove("active"));
+  el.classList.add("active");
+  const sec = document.getElementById("rep-tab-" + tab);
+  if (sec) sec.classList.add("active");
+}
+
+// ── Render kategori full dengan icon + nominal + bar ──
+function renderKatListFull(list, targetId, totalVal, barColor) {
   const el = document.getElementById(targetId);
   if (!el) return;
-  if (!list || !list.length) { el.innerHTML = '<div class="empty-state-sm">Belum ada pemasukan</div>'; return; }
-  const total = totalMasuk || list.reduce((s, k) => s + k.total, 0) || 1;
+  if (!list || !list.length) { el.innerHTML = '<div class="empty-state-sm">Belum ada data</div>'; return; }
+  const total = totalVal || list.reduce((s,k)=>s+k.total,0) || 1;
   el.innerHTML = list.map((k, i) => {
-    const pct = Math.round((k.total / total) * 100);
-    const ikon = IKON_KATEGORI[k.nama] || "ti-receipt";
-    return `<div class="rep-row">
-      <div class="rep-row-left">
-        <i class="ti ${ikon}" style="font-size:15px;color:#2d9b6a;width:18px"></i>
-        <span class="rep-row-name">${k.nama}</span>
-      </div>
-      <div class="rep-row-bar-wrap">
-        <div class="rep-bar-track"><div class="rep-bar-fill" style="width:${pct}%;background:#2d9b6a"></div></div>
-      </div>
-      <span class="rep-row-pct">${pct}%</span>
-      <span class="rep-row-amt income">${fmtRp(k.total)}</span>
-    </div>`;
+    const pct   = Math.round((k.total/total)*100);
+    const ikon  = IKON_KATEGORI[k.nama] || "ti-receipt";
+    const warna = barColor || WARNA_KATEGORI[i % WARNA_KATEGORI.length];
+    return '<div class="rep-kat-row">' +
+      '<div class="rep-kat-left">' +
+        '<div class="rep-kat-num">' + (i+1) + '</div>' +
+        '<i class="ti ' + ikon + ' rep-kat-icon" style="color:' + warna + '"></i>' +
+        '<div class="rep-kat-info"><div class="rep-kat-name">' + k.nama + '</div>' +
+        '<div class="rep-kat-amt">' + fmtRp(k.total) + '</div></div>' +
+      '</div>' +
+      '<div class="rep-kat-right">' +
+        '<div class="rep-kat-pct">' + pct + '%</div>' +
+        '<div class="rep-kat-bar"><div style="height:4px;border-radius:2px;background:' + warna + ';width:' + pct + '%;transition:width .4s"></div></div>' +
+      '</div>' +
+    '</div>';
+  }).join('<div style="height:0.5px;background:var(--bdr);margin:0 0"></div>');
+}
+
+// ── Rekening report lengkap ──
+function renderRekeningReportFull(perRek) {
+  const el = document.getElementById("rep-rekening-list");
+  if (!el) return;
+  const entries = Object.entries(perRek).sort((a,b)=>(b[1].masuk+b[1].keluar)-(a[1].masuk+a[1].keluar));
+  if (!entries.length) { el.innerHTML = '<div class="empty-state-sm">Belum ada data</div>'; return; }
+
+  el.innerHTML = entries.map(([nama, d]) => {
+    const net = d.masuk - d.keluar;
+    const rek = _rekeningData ? _rekeningData.find(r=>r.nama===nama) : null;
+    const warna = rek ? (rek.warna||"#4caf82") : "#4caf82";
+    return '<div class="rep-rek-card">' +
+      '<div class="rep-rek-top">' +
+        '<div style="width:10px;height:10px;border-radius:50%;background:' + warna + ';flex-shrink:0;margin-top:3px"></div>' +
+        '<div style="flex:1">' +
+          '<div class="rep-rek-name">' + nama + '</div>' +
+          '<div class="rep-rek-count">' + d.count + ' transaksi' + (d.transfer>0?' · Transfer: '+fmtRp(d.transfer):'') + '</div>' +
+        '</div>' +
+        '<div class="rep-rek-net" style="color:' + (net>=0?"#2d9b6a":"#e05252") + '">' + (net>=0?"+":"") + fmtRp(net) + '</div>' +
+      '</div>' +
+      '<div class="rep-rek-detail">' +
+        (d.masuk>0?'<span class="rep-rek-badge inc">↑ '+fmtRp(d.masuk)+'</span>':'')+
+        (d.keluar>0?'<span class="rep-rek-badge exp">↓ '+fmtRp(d.keluar)+'</span>':'')+
+      '</div>' +
+    '</div>';
   }).join("");
 }
+
+// ── Transfer list ──
+function renderTransferList(list) {
+  const el = document.getElementById("rep-transfer-list");
+  if (!el) return;
+  if (!list || !list.length) { el.innerHTML = '<div class="empty-state-sm">Tidak ada transfer bulan ini</div>'; return; }
+  el.innerHTML = list.map(tx => {
+    const tujuan = tx.sumber_tujuan || tx.subkategori || "—";
+    return '<div class="rep-row" style="align-items:center;gap:8px">' +
+      '<i class="ti ti-transfer" style="font-size:16px;color:#d97706;flex-shrink:0"></i>' +
+      '<div style="flex:1"><div style="font-size:12px;font-weight:500;color:#0f1a14">' + (tx.metode||"—") + ' → ' + tujuan + '</div>' +
+      '<div style="font-size:11px;color:#8aa896">' + (tx.tanggal||"") + '</div></div>' +
+      '<span style="font-size:13px;font-weight:600;font-family:DM Mono,monospace;color:#d97706">⇄ ' + fmtRp(tx.nominal) + '</span>' +
+    '</div>';
+  }).join('<div style="height:0.5px;background:var(--bdr)"></div>');
+}
+
+// ── Donut chart SVG ──
+function renderDonutChart(list, total) {
+  const canvas = document.getElementById("rep-donut");
+  const legendEl = document.getElementById("rep-donut-legend");
+  if (!canvas || !list || !list.length) return;
+
+  const ctx = canvas.getContext("2d");
+  const W = canvas.offsetWidth || 300, H = 180;
+  canvas.width = W; canvas.height = H;
+  const cx = W/2, cy = H/2, r = Math.min(cx,cy) - 10, ri = r * 0.55;
+  const tot = total || list.reduce((s,k)=>s+k.total,0) || 1;
+
+  ctx.clearRect(0, 0, W, H);
+  let startAngle = -Math.PI/2;
+
+  list.forEach((k, i) => {
+    const slice = (k.total/tot) * 2 * Math.PI;
+    const warna = WARNA_KATEGORI[i % WARNA_KATEGORI.length];
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, startAngle, startAngle + slice);
+    ctx.closePath();
+    ctx.fillStyle = warna;
+    ctx.fill();
+    startAngle += slice;
+  });
+
+  // Hole
+  ctx.beginPath();
+  ctx.arc(cx, cy, ri, 0, 2*Math.PI);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+
+  // Center text
+  ctx.fillStyle = "#0f1a14";
+  ctx.font = "bold 13px DM Sans, system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText(fmtRp(tot), cx, cy + 5);
+
+  // Legend
+  if (legendEl) {
+    legendEl.innerHTML = list.map((k,i) => {
+      const pct = Math.round((k.total/tot)*100);
+      return '<div class="rep-legend-item">' +
+        '<span class="rep-legend-dot" style="background:'+WARNA_KATEGORI[i%WARNA_KATEGORI.length]+'"></span>' +
+        '<span class="rep-legend-name">'+k.nama+'</span>' +
+        '<span class="rep-legend-pct">'+pct+'%</span>' +
+      '</div>';
+    }).join("");
+  }
+}
+
+// ── Tren bar chart SVG ──
+function renderTrenChart(trenKeys, trenMap) {
+  const el = document.getElementById("rep-tren-chart");
+  if (!el || !trenKeys.length) return;
+
+  const maxVal = Math.max(...trenKeys.map(k=>Math.max(trenMap[k].p, trenMap[k].k)), 1);
+  const BLN = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+  const H = 100;
+
+  el.innerHTML = '<div class="rep-tren-bars">' +
+    trenKeys.map(key => {
+      const bIdx = parseInt(key.split("-")[1])-1;
+      const hp = Math.round((trenMap[key].p/maxVal)*H);
+      const hk = Math.round((trenMap[key].k/maxVal)*H);
+      const lbl = BLN[bIdx] + " '" + key.slice(2,4);
+      return '<div class="rep-tren-col">' +
+        '<div class="rep-tren-group">' +
+          '<div title="'+fmtRp(trenMap[key].p)+'" style="height:'+Math.max(hp,2)+'px" class="rep-tren-bar inc"></div>' +
+          '<div title="'+fmtRp(trenMap[key].k)+'" style="height:'+Math.max(hk,2)+'px" class="rep-tren-bar exp"></div>' +
+        '</div>' +
+        '<div class="rep-tren-lbl">' + lbl + '</div>' +
+      '</div>';
+    }).join("") +
+  '</div>';
+}
+
+// ── Tren tabel ringkasan ──
+function renderTrenTable(trenKeys, trenMap) {
+  const el = document.getElementById("rep-tren-table");
+  if (!el || !trenKeys.length) return;
+  const BLN = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+
+  el.innerHTML = '<div class="tren-table">' +
+    '<div class="tren-table-hdr"><span>Bulan</span><span>Masuk</span><span>Keluar</span><span>Net</span></div>' +
+    trenKeys.slice().reverse().map((key, i) => {
+      const bIdx = parseInt(key.split("-")[1])-1;
+      const yr   = key.split("-")[0];
+      const net  = trenMap[key].p - trenMap[key].k;
+      const bg   = i%2===0 ? "var(--bg2)" : "var(--bg)";
+      return '<div class="tren-table-row" style="background:'+bg+'">' +
+        '<span class="tren-col-bln">'+BLN[bIdx].substring(0,3)+' '+yr.slice(2)+'</span>' +
+        '<span class="tren-col-in">'+fmtRp(trenMap[key].p)+'</span>' +
+        '<span class="tren-col-out">'+fmtRp(trenMap[key].k)+'</span>' +
+        '<span class="tren-col-net" style="color:'+( net>=0?"#2d9b6a":"#e05252")+'">'+( net>=0?"+":"")+fmtRp(net)+'</span>' +
+      '</div>';
+    }).join("") +
+  '</div>';
+}
+
 
 function renderSubkatDetail(perKat, perSubkat, allTx) {
   const el = document.getElementById("rep-subkat-list");
@@ -681,31 +875,6 @@ function toggleSubkat(iconEl) {
   const isOpen = body.style.display !== "none";
   body.style.display = isOpen ? "none" : "block";
   iconEl.style.transform = isOpen ? "rotate(-90deg)" : "rotate(0)";
-}
-
-function renderRekeningReport(perRek) {
-  const el = document.getElementById("rep-rekening-list");
-  if (!el) return;
-  const entries = Object.entries(perRek).sort((a, b) => (b[1].masuk + b[1].keluar) - (a[1].masuk + a[1].keluar));
-  if (!entries.length) { el.innerHTML = '<div class="empty-state-sm">Belum ada data</div>'; return; }
-  el.innerHTML = entries.map(([nama, d]) => {
-    const net = d.masuk - d.keluar;
-    return `<div class="rep-row" style="align-items:flex-start;flex-wrap:wrap;gap:4px">
-      <div class="rep-row-left" style="min-width:90px">
-        <i class="ti ti-wallet" style="font-size:14px;color:#8aA896;width:18px"></i>
-        <div>
-          <div class="rep-row-name">${nama}</div>
-          <div style="font-size:10px;color:#8aA896">${d.count} transaksi</div>
-        </div>
-      </div>
-      <div style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:120px">
-        ${d.masuk > 0 ? `<div style="font-size:11px;color:#2d9b6a">↑ Masuk: ${fmtRp(d.masuk)}</div>` : ""}
-        ${d.keluar > 0 ? `<div style="font-size:11px;color:#e05252">↓ Keluar: ${fmtRp(d.keluar)}</div>` : ""}
-        ${d.transfer > 0 ? `<div style="font-size:11px;color:#d97706">⇄ Transfer: ${fmtRp(d.transfer)}</div>` : ""}
-      </div>
-      <span style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace;color:${net>=0?"#2d9b6a":"#e05252"}">${net>=0?"+":""}${fmtRp(net)}</span>
-    </div>`;
-  }).join('<div style="height:1px;background:var(--bdr);margin:4px 0"></div>');
 }
 
 function setReportPeriod(el) {
@@ -1438,7 +1607,7 @@ async function loadDashboardPeriod(period) {
     const katArr = Object.entries(perKat)
       .map(([nama, total]) => ({ nama, total }))
       .sort((a, b) => b.total - a.total);
-    renderKatList(katArr, "kat-list");
+    renderKatList(katArr, "kat-list", 5);
 
     // Update transaksi terbaru
     renderTxList(list.slice(0, 5), "home-tx-list", true);
