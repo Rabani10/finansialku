@@ -518,10 +518,10 @@ async function loadReports(bulan) {
   });
 
   try {
-    // Ambil data bulan ini + 6 bulan terakhir untuk tren
+    // Ambil SEMUA transaksi bulan ini (tanpa limit) + semua data untuk tren
     const [res, resAll] = await Promise.all([
-      callAPI("getTransaksi", params),
-      callAPI("getTransaksi", { limit: 500 })
+      callAPI("getTransaksi", { ...params, limit: "all" }),
+      callAPI("getTransaksi", { limit: "all" })
     ]);
     const list    = res.data    || [];
     const listAll = resAll.data || [];
